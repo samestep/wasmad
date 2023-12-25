@@ -1,2 +1,3 @@
-# wasmad
+# `wasmad`
+
 Autodiff of Wasm GC.
