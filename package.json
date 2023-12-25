@@ -1,5 +1,26 @@
 {
   "name": "wasmad",
   "version": "0.0.0",
-  "files": []
+  "license": "MIT",
+  "repository": "samestep/wasmad",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "dependencies": {
+    "binaryen": "^116"
+  },
+  "devDependencies": {
+    "prettier": "^3",
+    "prettier-plugin-organize-imports": "^3",
+    "typescript": "^5",
+    "vitest": "^1"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "prettier --check .",
+    "test": "vitest"
+  }
 }
