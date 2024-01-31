@@ -1,3 +1,3 @@
 # `wasmad`
 
-Autodiff of Wasm GC.
+Automatic differentiation for WebAssembly.
