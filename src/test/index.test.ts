@@ -27,9 +27,27 @@ const compile = async <T extends WebAssembly.Exports>(
   return instance.exports as T;
 };
 
-test("subtraction", async () => {
+type Binop = {
+  fwd: (
+    a: number,
+    b: number,
+    da: number,
+    db: number,
+  ) => [number, number, number];
+  bwd: (
+    a: number,
+    b: number,
+    da: number,
+    db: number,
+    c: number,
+    dc: number,
+    t: number,
+  ) => [number, number];
+};
+
+const binop = async (filename: string): Promise<Binop> => {
   let binary;
-  const mod = binaryen.parseText(await slurp("sub.wat"));
+  const mod = binaryen.parseText(await slurp(filename));
   try {
     mod.setFeatures(binaryen.Features.Multivalue);
     autodiff(mod);
@@ -37,23 +55,11 @@ test("subtraction", async () => {
   } finally {
     mod.dispose();
   }
-  const { fwd, bwd } = await compile<{
-    fwd: (
-      a: number,
-      b: number,
-      da: number,
-      db: number,
-    ) => [number, number, number];
-    bwd: (
-      a: number,
-      b: number,
-      da: number,
-      db: number,
-      c: number,
-      dc: number,
-      t: number,
-    ) => [number, number];
-  }>(binary);
+  return await compile<Binop>(binary);
+};
+
+test("subtraction", async () => {
+  const { fwd, bwd } = await binop("sub.wat");
   const a = 5;
   const b = 3;
   let da = 0;
@@ -66,32 +72,7 @@ test("subtraction", async () => {
 });
 
 test("division", async () => {
-  let binary;
-  const mod = binaryen.parseText(await slurp("div.wat"));
-  try {
-    mod.setFeatures(binaryen.Features.Multivalue);
-    autodiff(mod);
-    binary = mod.emitBinary();
-  } finally {
-    mod.dispose();
-  }
-  const { fwd, bwd } = await compile<{
-    fwd: (
-      a: number,
-      b: number,
-      da: number,
-      db: number,
-    ) => [number, number, number];
-    bwd: (
-      a: number,
-      b: number,
-      da: number,
-      db: number,
-      c: number,
-      dc: number,
-      t: number,
-    ) => [number, number];
-  }>(binary);
+  const { fwd, bwd } = await binop("div.wat");
   const a = 5;
   const b = 3;
   let da = 0;
