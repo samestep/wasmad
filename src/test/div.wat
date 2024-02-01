@@ -1,5 +1,3 @@
 (module
-  (func (export "div") (param $a f64) (param $b f64) (result f64)
-    (f64.div
-      (local.get $a)
-      (local.get $b))))
+  (func (param f64 f64) (result f64)
+    (f64.div (local.get 0) (local.get 1))))

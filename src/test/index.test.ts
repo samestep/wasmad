@@ -103,6 +103,18 @@ test("division", async () => {
   expect([da, db]).toEqual([1 / 3, -5 / 9]);
 });
 
+test("polynomial", async () => {
+  const { polynomial } = await compile<{
+    polynomial: (x: number, y: number) => number;
+  }>(await wat(await slurp("polynomial.wat")));
+  const x = 2;
+  const y = 3;
+  console.log(polynomial(x, y));
+  expect(polynomial(x, y)).toBe(
+    2 * x ** 3 + 4 * x ** 2 * y + x * y ** 5 + y ** 2 - 7,
+  );
+});
+
 test("multiple memories", async () => {
   const { store, div } = await compile<{
     store: (a: number, b: number) => void;
