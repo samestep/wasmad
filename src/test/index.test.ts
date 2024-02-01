@@ -66,10 +66,41 @@ test("subtraction", async () => {
 });
 
 test("division", async () => {
-  const { div } = await compile<{ div: (a: number, b: number) => number }>(
-    await wat(await slurp("div.wat")),
-  );
-  expect(div(2, 3)).toBe(2 / 3);
+  let binary;
+  const mod = binaryen.parseText(await slurp("div.wat"));
+  try {
+    mod.setFeatures(binaryen.Features.Multivalue);
+    autodiff(mod);
+    binary = mod.emitBinary();
+  } finally {
+    mod.dispose();
+  }
+  const { fwd, bwd } = await compile<{
+    fwd: (
+      a: number,
+      b: number,
+      da: number,
+      db: number,
+    ) => [number, number, number];
+    bwd: (
+      a: number,
+      b: number,
+      da: number,
+      db: number,
+      c: number,
+      dc: number,
+      t: number,
+    ) => [number, number];
+  }>(binary);
+  const a = 5;
+  const b = 3;
+  let da = 0;
+  let db = 0;
+  let [c, dc, t] = fwd(a, b, da, db);
+  expect([c, dc, t]).toEqual([5 / 3, 0, 0]);
+  dc = 1;
+  [da, db] = bwd(a, b, da, db, c, dc, t);
+  expect([da, db]).toEqual([1 / 3, -5 / 9]);
 });
 
 test("multiple memories", async () => {
