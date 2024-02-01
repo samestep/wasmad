@@ -109,7 +109,6 @@ test("polynomial", async () => {
   }>(await wat(await slurp("polynomial.wat")));
   const x = 2;
   const y = 3;
-  console.log(polynomial(x, y));
   expect(polynomial(x, y)).toBe(
     2 * x ** 3 + 4 * x ** 2 * y + x * y ** 5 + y ** 2 - 7,
   );
