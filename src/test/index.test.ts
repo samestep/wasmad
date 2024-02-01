@@ -84,6 +84,13 @@ test("division", async () => {
   expect([da, db]).toEqual([1 / 3, -5 / 9]);
 });
 
+test("square", async () => {
+  const { square } = await compile<{ square: (x: number) => number }>(
+    await wat(await slurp("square.wat")),
+  );
+  expect(square(3)).toBe(9);
+});
+
 test("polynomial", async () => {
   const { polynomial } = await compile<{
     polynomial: (x: number, y: number) => number;
