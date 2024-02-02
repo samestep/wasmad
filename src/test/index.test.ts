@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import path from "path";
 import url from "url";
 import { expect, test } from "vitest";
-import { autodiff } from "../index.js";
+import * as wasmad from "../index.js";
 
 const dir = path.dirname(url.fileURLToPath(import.meta.url));
 
@@ -45,21 +45,23 @@ type Binop = {
   ) => [number, number];
 };
 
-const binop = async (filename: string): Promise<Binop> => {
+const autodiff = async <T extends WebAssembly.Exports>(
+  filename: string,
+): Promise<T> => {
   let binary;
   const mod = binaryen.parseText(await slurp(filename));
   try {
     mod.setFeatures(binaryen.Features.Multivalue);
-    autodiff(mod);
+    wasmad.autodiff(mod);
     binary = mod.emitBinary();
   } finally {
     mod.dispose();
   }
-  return await compile<Binop>(binary);
+  return await compile<T>(binary);
 };
 
 test("subtraction", async () => {
-  const { fwd, bwd } = await binop("sub.wat");
+  const { fwd, bwd } = await autodiff<Binop>("sub.wat");
   const a = 5;
   const b = 3;
   let da = 0;
@@ -72,7 +74,7 @@ test("subtraction", async () => {
 });
 
 test("division", async () => {
-  const { fwd, bwd } = await binop("div.wat");
+  const { fwd, bwd } = await autodiff<Binop>("div.wat");
   const a = 5;
   const b = 3;
   let da = 0;
