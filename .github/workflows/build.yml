@@ -13,7 +13,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22.0.0-nightly2024010568c8472ed9"
-      - run: npm ci
-      - run: npm run check
-      - run: npm run build
-      - run: npm run test run
+      - uses: oven-sh/setup-bun@v1
+      - run: bun install
+      - run: bun run check
+      - run: bun run build
+      - run: bun run test run
