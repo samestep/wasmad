@@ -12,6 +12,7 @@ const slurp = async (filename: string): Promise<string> =>
 
 const wat = async (text: string): Promise<Uint8Array> => {
   const mod = binaryen.parseText(text);
+  mod.setFeatures(binaryen.Features.GC);
   try {
     return mod.emitBinary();
   } finally {
@@ -111,4 +112,12 @@ test("multiple memories", async () => {
   }>(await wat(await slurp("multi-memory.wat")));
   store(2, 3);
   expect(div()).toBe(2 / 3);
+});
+
+test("garbage collection", async () => {
+  const { cons, div } = await compile<{
+    cons: (a: number, b: number) => any;
+    div: (ab: any) => number;
+  }>(await wat(await slurp("gc.wat")));
+  expect(div(cons(2, 3))).toBe(2 / 3);
 });
