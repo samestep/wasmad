@@ -12,8 +12,8 @@ const slurp = async (filename: string): Promise<string> =>
 
 const wat = async (text: string): Promise<Uint8Array> => {
   const mod = binaryen.parseText(text);
-  mod.setFeatures(binaryen.Features.GC);
   try {
+    mod.setFeatures(binaryen.Features.GC);
     return mod.emitBinary();
   } finally {
     mod.dispose();
