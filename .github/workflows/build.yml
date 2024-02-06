@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22.0.0-nightly20240104084d761dfc"
+          node-version: "22.0.0-nightly2024010568c8472ed9"
       - run: npm ci
       - run: npm run check
       - run: npm run build
