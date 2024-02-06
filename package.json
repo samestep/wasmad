@@ -24,6 +24,6 @@
   "scripts": {
     "build": "tsc",
     "check": "prettier --check .",
-    "test": "node --experimental-wasm-multi-memory node_modules/.bin/vitest"
+    "test": "node --experimental-wasm-multi-memory --experimental-wasm-gc node_modules/.bin/vitest"
   }
 }
