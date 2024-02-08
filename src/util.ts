@@ -1,6 +1,6 @@
 import binaryen from "binaryen";
 
-type Bool = 0 | 1;
+type Bool = number;
 
 type Int = number;
 
