@@ -12,7 +12,7 @@
     "!src/test"
   ],
   "dependencies": {
-    "binaryen": "^116"
+    "binaryen": "116"
   },
   "devDependencies": {
     "@types/node": "^20",

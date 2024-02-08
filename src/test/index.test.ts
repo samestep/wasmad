@@ -1,14 +1,7 @@
 import binaryen from "binaryen";
-import fs from "fs/promises";
-import path from "path";
-import url from "url";
 import { expect, test } from "vitest";
 import * as wasmad from "../index.js";
-
-const dir = path.dirname(url.fileURLToPath(import.meta.url));
-
-const slurp = async (filename: string): Promise<string> =>
-  await fs.readFile(path.join(dir, filename), "utf8");
+import { slurp } from "./util.js";
 
 const wat = async (text: string): Promise<Uint8Array> => {
   const mod = binaryen.parseText(text);
