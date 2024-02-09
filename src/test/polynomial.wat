@@ -1,5 +1,5 @@
 (module
-  (func (export "polynomial") (param $x f64) (param $y f64) (result f64)
+  (func (param $x f64) (param $y f64) (result f64)
     (local $x2 f64)
     (local $y2 f64)
     (local $z f64)

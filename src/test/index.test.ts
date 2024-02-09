@@ -21,50 +21,43 @@ const compile = async <T extends WebAssembly.Exports>(
   return instance.exports as T;
 };
 
+type Unop = {
+  fwd: (a: number, da: number) => [number, number, any];
+  bwd: (da: number, db: number, t: any) => [number, number];
+};
+
 type Binop = {
-  fwd: (
-    a: number,
-    b: number,
-    da: number,
-    db: number,
-  ) => [number, number, number];
-  bwd: (
-    a: number,
-    b: number,
-    da: number,
-    db: number,
-    c: number,
-    dc: number,
-    t: number,
-  ) => [number, number];
+  fwd: (a: number, b: number, da: number, db: number) => [number, number, any];
+  bwd: (da: number, db: number, dc: number, t: any) => [number, number];
 };
 
 const autodiff = async <T extends WebAssembly.Exports>(
   filename: string,
 ): Promise<T> => {
-  let binary;
   const mod = binaryen.parseText(await slurp(filename));
   try {
+    expect(mod.getNumFunctions()).toBe(1);
     mod.setFeatures(binaryen.Features.Multivalue);
-    wasmad.autodiff(mod);
-    binary = mod.emitBinary();
+    mod.setFeatures(binaryen.Features.GC);
+    const [{ fwd, bwd }] = wasmad.autodiff(mod);
+    mod.addFunctionExport(binaryen.getFunctionInfo(fwd).name, "fwd");
+    mod.addFunctionExport(binaryen.getFunctionInfo(bwd).name, "bwd");
+    const binary = mod.emitBinary();
+    return await compile<T>(binary);
   } finally {
     mod.dispose();
   }
-  return await compile<T>(binary);
 };
 
 test("subtraction", async () => {
   const { fwd, bwd } = await autodiff<Binop>("sub.wat");
-  const a = 5;
-  const b = 3;
   let da = 0;
   let db = 0;
-  let [c, dc, t] = fwd(a, b, da, db);
-  expect([c, dc, t]).toEqual([2, 0, 0]);
+  let [c, dc, t] = fwd(5, 3, da, db);
+  expect([c, dc]).toEqual([2, 0]);
   dc = 1;
-  [da, db] = bwd(a, b, da, db, c, dc, t);
-  expect([da, db]).toEqual([1, -1]);
+  [da, db] = bwd(da, db, dc, t);
+  expect([da, db]).toEqual([dc, -dc]);
 });
 
 test("division", async () => {
@@ -74,28 +67,47 @@ test("division", async () => {
   let da = 0;
   let db = 0;
   let [c, dc, t] = fwd(a, b, da, db);
-  expect([c, dc, t]).toEqual([5 / 3, 0, 0]);
+  expect([c, dc]).toEqual([a / b, 0]);
   dc = 1;
-  [da, db] = bwd(a, b, da, db, c, dc, t);
-  expect([da, db]).toEqual([1 / 3, -5 / 9]);
+  [da, db] = bwd(da, db, dc, t);
+  expect([da, db]).toEqual([dc / b, dc * (-a / b ** 2)]);
 });
 
 test("square", async () => {
-  const { square } = await compile<{ square: (x: number) => number }>(
-    await wat(await slurp("square.wat")),
-  );
-  expect(square(3)).toBe(9);
+  const { fwd, bwd } = await autodiff<Unop>("square.wat");
+  const x = 3;
+  let dx = 0;
+  let [y, dy, t] = fwd(x, dx);
+  expect([y, dy]).toEqual([9, 0]);
+  dx = 5;
+  dy = 1;
+  expect(bwd(dx, dy, t)).toBe(dx + dy * 2 * x);
+});
+
+test("tesseract", async () => {
+  const { fwd, bwd } = await autodiff<Unop>("tesseract.wat");
+  const x = 5;
+  const dx = 0;
+  const [y, dy, t] = fwd(x, dx);
+  expect([y, dy]).toEqual([x ** 4, 0]);
+  expect(bwd(dx, 1, t)).toBe(4 * x ** 3);
 });
 
 test("polynomial", async () => {
-  const { polynomial } = await compile<{
-    polynomial: (x: number, y: number) => number;
-  }>(await wat(await slurp("polynomial.wat")));
+  const { fwd, bwd } = await autodiff<Binop>("polynomial.wat");
   const x = 2;
-  const y = 3;
-  expect(polynomial(x, y)).toBe(
+  const y = 2;
+  const dx = 0;
+  const dy = 0;
+  const [z, dz, t] = fwd(x, y, dx, dy);
+  expect([z, dz]).toEqual([
     2 * x ** 3 + 4 * x ** 2 * y + x * y ** 5 + y ** 2 - 7,
-  );
+    0,
+  ]);
+  expect(bwd(dx, dy, 1, t)).toEqual([
+    6 * x ** 2 + 8 * x * y + y ** 5,
+    4 * x ** 2 + 5 * x * y ** 4 + 2 * y,
+  ]);
 });
 
 test("multiple memories", async () => {

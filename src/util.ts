@@ -1,5 +1,16 @@
 import binaryen from "binaryen";
 
+/**
+ * Throws if `x === undefined`.
+ * @returns `x`
+ * @param f called if `x === undefined`, to produce error message
+ */
+export const unwrap = <T>(x: T | undefined, f?: () => string): T => {
+  if (x === undefined)
+    throw Error((f ?? (() => "called `unwrap` with `undefined`"))());
+  return x;
+};
+
 type Bool = number;
 
 type Int = number;
@@ -14,6 +25,9 @@ export type BinaryenPackedType = number;
 
 /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L140-L142 */
 export type BinaryenHeapType = number;
+
+/** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L251 */
+type BinaryenModuleRef = number;
 
 /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3507-L3514 */
 type TypeBuilderRef = number;
@@ -36,6 +50,23 @@ interface Internal {
     heapType: BinaryenHeapType,
     nullable: Bool,
   ): binaryen.Type;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L1054-L1058 */
+  _BinaryenStructNew(
+    module: BinaryenModuleRef,
+    operands: Pointer<binaryen.ExpressionRef>,
+    numOperands: BinaryenIndex,
+    type: BinaryenHeapType,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L1059-L1063 */
+  _BinaryenStructGet(
+    module: BinaryenModuleRef,
+    index: BinaryenIndex,
+    ref: binaryen.ExpressionRef,
+    type: binaryen.Type,
+    signed_: Bool,
+  ): binaryen.ExpressionRef;
 
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3532-L3534 */
   _TypeBuilderCreate(size: BinaryenIndex): TypeBuilderRef;
@@ -80,6 +111,32 @@ export const typeFromHeapType = (
   nullable: boolean,
 ): binaryen.Type =>
   internal._BinaryenTypeFromHeapType(heapType, toBool(nullable));
+
+export const structNew = (
+  mod: binaryen.Module,
+  operands: binaryen.ExpressionRef[],
+  type: BinaryenHeapType,
+): binaryen.ExpressionRef =>
+  withAlloc(4 * operands.length, (pointer) => {
+    for (let i = 0; i < operands.length; ++i)
+      internal.__i32_store(pointer + 4 * i, operands[i]);
+    return internal._BinaryenStructNew(mod.ptr, pointer, operands.length, type);
+  });
+
+export const structGet = (
+  mod: binaryen.Module,
+  index: BinaryenIndex,
+  ref: binaryen.ExpressionRef,
+  type: binaryen.Type,
+  signed?: boolean,
+): binaryen.ExpressionRef =>
+  internal._BinaryenStructGet(
+    mod.ptr,
+    index,
+    ref,
+    type,
+    toBool(signed ?? false),
+  );
 
 export interface Field {
   type: binaryen.Type;

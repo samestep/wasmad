@@ -125,7 +125,7 @@ export interface Tape extends Exprs {
 }
 
 /** Return a tape type for every function. */
-export const tape = (mod: binaryen.Module): Tape[] => {
+export const makeTapes = (mod: binaryen.Module): Tape[] => {
   const n = mod.getNumFunctions();
   const exprs: Exprs[] = [];
   const types = util.buildType(n, (builder) => {

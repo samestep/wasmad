@@ -1,6 +1,6 @@
 import binaryen from "binaryen";
 import { expect, test } from "vitest";
-import { tape } from "../tape.js";
+import { makeTapes } from "../tape.js";
 import * as util from "../util.js";
 
 test("get param", () => {
@@ -19,7 +19,7 @@ test("get param", () => {
         },
       ]);
     });
-    expect(tape(mod)).toEqual([
+    expect(makeTapes(mod)).toEqual([
       {
         fwd: [firstGet],
         bwd: new Map([
@@ -51,7 +51,7 @@ test("nonzero constant", () => {
         },
       ]);
     });
-    expect(tape(mod)).toEqual([
+    expect(makeTapes(mod)).toEqual([
       {
         fwd: [fortyTwo],
         bwd: new Map([
@@ -93,7 +93,7 @@ test("division", () => {
         },
       ]);
     });
-    expect(tape(mod)).toEqual([
+    expect(makeTapes(mod)).toEqual([
       {
         fwd: [get1, div],
         bwd: new Map([
@@ -124,7 +124,7 @@ test("get unset variable", () => {
         },
       ]);
     });
-    expect(tape(mod)).toEqual([
+    expect(makeTapes(mod)).toEqual([
       {
         fwd: [get0],
         bwd: new Map([[get0, 0]]),
