@@ -1,36 +1,40 @@
 import binaryen from "binaryen";
 import { expect, test } from "vitest";
-import { Tape, tape } from "../tape.js";
+import { tape } from "../tape.js";
 import * as util from "../util.js";
-import { slurp } from "./util.js";
-
-const empty = (): Tape => {
-  const [struct] = util.buildType(1, (builder) => {
-    builder.setStructType(0, []);
-  });
-  return { fwd: [], bwd: new Map(), struct };
-};
 
 test("get param", () => {
   const mod = new binaryen.Module();
   try {
-    mod.addFunction(
-      "foo",
-      binaryen.f64,
-      binaryen.f64,
-      [],
-      mod.f64.mul(
-        mod.local.get(0, binaryen.f64),
-        mod.local.get(0, binaryen.f64),
-      ),
-    );
-    expect(tape(mod)).toEqual([empty()]);
+    const firstGet = mod.local.get(0, binaryen.f64);
+    const secondGet = mod.local.get(0, binaryen.f64);
+    const mul = mod.f64.mul(firstGet, secondGet);
+    mod.addFunction("foo", binaryen.f64, binaryen.f64, [], mul);
+    const [struct] = util.buildType(1, (builder) => {
+      builder.setStructType(0, [
+        {
+          type: binaryen.f64,
+          packedType: util.packedTypeNotPacked,
+          mutable: false,
+        },
+      ]);
+    });
+    expect(tape(mod)).toEqual([
+      {
+        fwd: [firstGet],
+        bwd: new Map([
+          [firstGet, 0],
+          [secondGet, 0],
+        ]),
+        struct,
+      },
+    ]);
   } finally {
     mod.dispose();
   }
 });
 
-test("set and get param", () => {
+test("nonzero constant", () => {
   const mod = new binaryen.Module();
   try {
     const fortyTwo = mod.f64.const(42);
@@ -62,10 +66,71 @@ test("set and get param", () => {
   }
 });
 
-test("square, set, and get", async () => {
-  const mod = binaryen.parseText(await slurp("square.wat"));
+test("division", () => {
+  const mod = new binaryen.Module();
   try {
-    expect(tape(mod)).toEqual([empty()]);
+    const get0 = mod.local.get(0, binaryen.f64);
+    const get1 = mod.local.get(1, binaryen.f64);
+    const div = mod.f64.div(get0, get1);
+    mod.addFunction(
+      "foo",
+      binaryen.createType([binaryen.f64, binaryen.f64]),
+      binaryen.f64,
+      [],
+      div,
+    );
+    const [struct] = util.buildType(1, (builder) => {
+      builder.setStructType(0, [
+        {
+          type: binaryen.f64,
+          packedType: util.packedTypeNotPacked,
+          mutable: false,
+        },
+        {
+          type: binaryen.f64,
+          packedType: util.packedTypeNotPacked,
+          mutable: false,
+        },
+      ]);
+    });
+    expect(tape(mod)).toEqual([
+      {
+        fwd: [get1, div],
+        bwd: new Map([
+          [get1, 0],
+          [div, 1],
+        ]),
+        struct,
+      },
+    ]);
+  } finally {
+    mod.dispose();
+  }
+});
+
+test("get unset variable", () => {
+  const mod = new binaryen.Module();
+  try {
+    const get0 = mod.local.get(0, binaryen.f64);
+    const get1 = mod.local.get(1, binaryen.f64);
+    const mul = mod.f64.mul(get0, get1);
+    mod.addFunction("foo", binaryen.f64, binaryen.f64, [binaryen.f64], mul);
+    const [struct] = util.buildType(1, (builder) => {
+      builder.setStructType(0, [
+        {
+          type: binaryen.f64,
+          packedType: util.packedTypeNotPacked,
+          mutable: false,
+        },
+      ]);
+    });
+    expect(tape(mod)).toEqual([
+      {
+        fwd: [get0],
+        bwd: new Map([[get0, 0]]),
+        struct,
+      },
+    ]);
   } finally {
     mod.dispose();
   }

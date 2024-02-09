@@ -2,12 +2,21 @@ import binaryen from "binaryen";
 import * as util from "./util.js";
 
 enum ValueKind {
+  /** this value is a parameter that has not been read yet */
+  Param,
+
+  /** this value is actually no values */
   Void,
+
+  /** this value is the default for its type */
   Default,
+
+  /** this value was computed by the given expression */
   Expression,
 }
 
 type Value =
+  | { kind: ValueKind.Param }
   | { kind: ValueKind.Void }
   | { kind: ValueKind.Default }
   | { kind: ValueKind.Expression; ref: binaryen.ExpressionRef };
@@ -17,9 +26,11 @@ class Taper {
   need: Map<binaryen.ExpressionRef, Value>;
 
   constructor(f: binaryen.FunctionInfo) {
-    this.vars = [...binaryen.expandType(f.params), ...f.vars].map(() => {
-      return { kind: ValueKind.Default };
-    });
+    const params = binaryen.expandType(f.params);
+    this.vars = [
+      ...params.map((): Value => ({ kind: ValueKind.Param })),
+      ...f.vars.map((): Value => ({ kind: ValueKind.Default })),
+    ];
     this.need = new Map();
   }
 
@@ -39,7 +50,12 @@ class Taper {
   }
 
   localGet(ref: binaryen.ExpressionRef, info: binaryen.LocalGetInfo): Value {
-    return this.vars[info.index];
+    let value = this.vars[info.index];
+    if (value.kind === ValueKind.Param) {
+      value = { kind: ValueKind.Expression, ref };
+      this.vars[info.index] = value;
+    }
+    return value;
   }
 
   localSet(ref: binaryen.ExpressionRef, info: binaryen.LocalSetInfo): Value {
@@ -120,13 +136,24 @@ export const tape = (mod: binaryen.Module): Tape[] => {
       const fields = new Map<binaryen.ExpressionRef, util.BinaryenIndex>();
       const bwd = new Map<binaryen.ExpressionRef, util.BinaryenIndex>();
       for (const [ref, value] of t.need) {
-        if (value.kind === ValueKind.Expression) {
-          let j = fields.get(value.ref);
-          if (j === undefined) {
-            j = fields.size;
-            fields.set(value.ref, j);
+        switch (value.kind) {
+          case ValueKind.Param:
+            throw Error("Parameter value should have been set at first read");
+          case ValueKind.Void:
+            throw Error("Void value should not be needed");
+          case ValueKind.Default:
+            break;
+          case ValueKind.Expression: {
+            let j = fields.get(value.ref);
+            if (j === undefined) {
+              j = fields.size;
+              fields.set(value.ref, j);
+            }
+            bwd.set(ref, j);
+            break;
           }
-          bwd.set(ref, j);
+          default:
+            const _: never = value; // ensure all cases are handled
         }
       }
       const fwd = [...fields.keys()];
