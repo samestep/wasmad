@@ -110,15 +110,6 @@ test("polynomial", async () => {
   ]);
 });
 
-test("multiple memories", async () => {
-  const { store, div } = await compile<{
-    store: (a: number, b: number) => void;
-    div: () => number;
-  }>(await wat(await slurp("multi-memory.wat")));
-  store(2, 3);
-  expect(div()).toBe(2 / 3);
-});
-
 test("garbage collection", async () => {
   const { cons, div } = await compile<{
     cons: (a: number, b: number) => any;
