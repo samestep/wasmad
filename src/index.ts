@@ -121,14 +121,6 @@ class Autodiff {
     return this.mod.local.get(index, this.fwdVars[index]);
   }
 
-  set(expr: binaryen.ExpressionRef): {
-    index: number;
-    expr: binaryen.ExpressionRef;
-  } {
-    const index = this.makeBwd(binaryen.getExpressionType(expr));
-    return { index, expr: this.mod.local.set(index, expr) };
-  }
-
   get(index: binaryen.ExpressionRef): binaryen.ExpressionRef {
     return this.mod.local.get(index, this.bwdVars[index]);
   }
@@ -225,22 +217,23 @@ class Autodiff {
       case binaryen.DivFloat64: {
         const y = this.untape(info.right);
         const z = this.untape(ref);
-        // this code appears to set `dy` first, using `dx1` before defining it,
-        // but `this.bwd` will eventually get reversed so it's fine
-        const dx1 = this.set(this.mod.f64.div(this.get(dz), this.get(y)));
+        const dx1 = this.makeBwd(binaryen.f64);
         this.bwd.push(
-          this.mod.local.set(
-            dx,
-            this.mod.f64.add(this.get(dx), this.get(dx1.index)),
-          ),
+          this.mod.local.set(dx, this.mod.f64.add(this.get(dx), this.get(dx1))),
           this.mod.local.set(
             dy,
             this.mod.f64.sub(
               this.get(dy),
-              this.mod.f64.mul(this.get(dx1.index), this.get(z)),
+              this.mod.f64.mul(
+                this.mod.local.tee(
+                  dx1,
+                  this.mod.f64.div(this.get(dz), this.get(y)),
+                  binaryen.f64,
+                ),
+                this.get(z),
+              ),
             ),
           ),
-          dx1.expr,
         );
         return { fwd: this.mod.f64.div(left.fwd, right.fwd), bwd: dz };
       }
