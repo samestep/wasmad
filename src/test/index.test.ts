@@ -117,3 +117,10 @@ test("garbage collection", async () => {
   }>(await wat(await slurp("gc.wat")));
   expect(div(cons(2, 3))).toBe(2 / 3);
 });
+
+test("tail call", async () => {
+  const { fac } = await compile<{
+    fac: (x: bigint) => bigint;
+  }>(await wat(await slurp("tail.wat")));
+  expect(fac(5n)).toBe(120n);
+});
