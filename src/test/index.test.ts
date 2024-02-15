@@ -121,6 +121,6 @@ test("garbage collection", async () => {
 test("tail call", async () => {
   const { fac } = await compile<{
     fac: (x: bigint) => bigint;
-  }>(await wat(await slurp("tail.wat")));
+  }>(await wat(await slurp("fac.wat")));
   expect(fac(5n)).toBe(120n);
 });
