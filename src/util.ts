@@ -11,6 +11,16 @@ export const unwrap = <T>(x: T | undefined, f?: () => string): T => {
   return x;
 };
 
+export const funcIndicesByName = (
+  mod: binaryen.Module,
+): Map<string, number> => {
+  const n = mod.getNumFunctions();
+  const indices = new Map<string, number>();
+  for (let i = 0; i < n; ++i)
+    indices.set(binaryen.getFunctionInfo(mod.getFunctionByIndex(i)).name, i);
+  return indices;
+};
+
 type Bool = number;
 
 type Int = number;
@@ -32,9 +42,6 @@ type BinaryenModuleRef = number;
 /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3507-L3514 */
 type TypeBuilderRef = number;
 
-/** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3516 */
-export type TypeBuilderErrorReason = number;
-
 interface Internal {
   _malloc(size: number): Pointer<any>;
   __i32_store8(pointer: Pointer<number>, value: number): void;
@@ -44,6 +51,24 @@ interface Internal {
 
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L136 */
   _BinaryenPackedTypeNotPacked(): BinaryenPackedType;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L170-L171 */
+  _BinaryenStructTypeGetFieldType(
+    heapType: BinaryenHeapType,
+    index: BinaryenIndex,
+  ): binaryen.Type;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L172-L173 */
+  _BinaryenStructTypeGetFieldPackedType(
+    heapType: BinaryenHeapType,
+    index: BinaryenIndex,
+  ): BinaryenPackedType;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L174-L175 */
+  _BinaryenStructTypeIsFieldMutable(
+    heapType: BinaryenHeapType,
+    index: BinaryenIndex,
+  ): Bool;
 
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L188-L189 */
   _BinaryenTypeFromHeapType(
@@ -68,6 +93,18 @@ interface Internal {
     signed_: Bool,
   ): binaryen.ExpressionRef;
 
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3518-L3519 */
+  _TypeBuilderErrorReasonSelfSupertype(): TypeBuilderErrorReason;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3520-L3522 */
+  _TypeBuilderErrorReasonInvalidSupertype(): TypeBuilderErrorReason;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3523-L3525 */
+  _TypeBuilderErrorReasonForwardSupertypeReference(): TypeBuilderErrorReason;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3526-L3528 */
+  _TypeBuilderErrorReasonForwardChildReference(): TypeBuilderErrorReason;
+
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3532-L3534 */
   _TypeBuilderCreate(size: BinaryenIndex): TypeBuilderRef;
 
@@ -79,6 +116,26 @@ interface Internal {
     fieldPackedTypes: Pointer<BinaryenPackedType>,
     fieldMutables: Pointer<Bool>,
     numFields: Int,
+  ): void;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3559-L3562 */
+  _TypeBuilderGetTempHeapType(
+    builder: TypeBuilderRef,
+    index: BinaryenIndex,
+  ): BinaryenHeapType;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3567-L3570 */
+  _TypeBuilderGetTempRefType(
+    builder: TypeBuilderRef,
+    heapType: BinaryenHeapType,
+    nullable: Int,
+  ): binaryen.Type;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3578-L3582 */
+  _TypeBuilderCreateRecGroup(
+    builder: TypeBuilderRef,
+    index: BinaryenIndex,
+    length: BinaryenIndex,
   ): void;
 
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3583-L3589 */
@@ -105,6 +162,21 @@ const withAlloc = <T>(size: number, f: (pointer: Pointer<any>) => T): T => {
 
 export const packedTypeNotPacked: BinaryenPackedType =
   internal._BinaryenPackedTypeNotPacked();
+
+export interface Field {
+  type: binaryen.Type;
+  packedType: BinaryenPackedType;
+  mutable: boolean;
+}
+
+export const structTypeGetField = (
+  heapType: BinaryenHeapType,
+  index: BinaryenIndex,
+): Field => ({
+  type: internal._BinaryenStructTypeGetFieldType(heapType, index),
+  packedType: internal._BinaryenStructTypeGetFieldPackedType(heapType, index),
+  mutable: !!internal._BinaryenStructTypeIsFieldMutable(heapType, index),
+});
 
 export const typeFromHeapType = (
   heapType: BinaryenHeapType,
@@ -138,10 +210,23 @@ export const structGet = (
     toBool(signed ?? false),
   );
 
-export interface Field {
-  type: binaryen.Type;
-  packedType: BinaryenPackedType;
-  mutable: boolean;
+/** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3516 */
+export enum TypeBuilderErrorReason {
+  SelfSupertype = internal._TypeBuilderErrorReasonSelfSupertype(),
+  InvalidSupertype = internal._TypeBuilderErrorReasonInvalidSupertype(),
+  ForwardSupertypeReference = internal._TypeBuilderErrorReasonForwardSupertypeReference(),
+  ForwardChildReference = internal._TypeBuilderErrorReasonForwardChildReference(),
+}
+
+export class TypeBuilderError extends Error {
+  constructor(
+    public index: BinaryenIndex,
+    public reason: TypeBuilderErrorReason,
+  ) {
+    super(
+      `type builder error at index ${index} with reason ${TypeBuilderErrorReason[reason]}`,
+    );
+  }
 }
 
 export class TypeBuilder {
@@ -168,14 +253,21 @@ export class TypeBuilder {
       );
     });
   }
-}
 
-export class TypeBuilderError extends Error {
-  constructor(
-    public index: BinaryenIndex,
-    public reason: TypeBuilderErrorReason,
-  ) {
-    super(`type builder error at index ${index} with reason ${reason}`);
+  getTempHeapType(index: BinaryenIndex): BinaryenHeapType {
+    return internal._TypeBuilderGetTempHeapType(this.ref, index);
+  }
+
+  getTempRefType(heapType: BinaryenHeapType, nullable: boolean): binaryen.Type {
+    return internal._TypeBuilderGetTempRefType(
+      this.ref,
+      heapType,
+      toBool(nullable),
+    );
+  }
+
+  createRecGroup(index: BinaryenIndex, length: BinaryenIndex): void {
+    internal._TypeBuilderCreateRecGroup(this.ref, index, length);
   }
 }
 

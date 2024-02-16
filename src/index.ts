@@ -1,6 +1,28 @@
 import binaryen from "binaryen";
-import { Tape, makeTapes } from "./tape.js";
+import { LoadKind, Tape, makeTapes } from "./tape.js";
 import * as util from "./util.js";
+
+interface Names {
+  fwd: string;
+  bwd: string;
+}
+
+const makeNames = (names: string[]): Map<string, Names> => {
+  const set = new Set(names);
+  const gradNames = new Map<string, Names>();
+  for (const name of names) {
+    // TODO: be smarter to avoid pathological cases, maybe e.g. like this?
+    // https://cs.stackexchange.com/a/39700
+    let fwd = `${name}_fwd`;
+    for (let i = 1; set.has(fwd); ++i) fwd = `${name}_fwd${i}`;
+    set.add(fwd);
+    let bwd = `${name}_bwd`;
+    for (let i = 1; set.has(bwd); ++i) bwd = `${name}_bwd${i}`;
+    set.add(bwd);
+    gradNames.set(name, { fwd, bwd });
+  }
+  return gradNames;
+};
 
 const gradType = (type: binaryen.Type): binaryen.Type => {
   if (type !== binaryen.f64) throw Error("Only f64 values are supported");
@@ -27,19 +49,25 @@ interface Result {
 }
 
 class Autodiff {
+  /** types of the original function parameters */
   params: binaryen.Type[];
 
+  /** gradient types for the original function parameters */
   paramsGrad: binaryen.Type[];
 
+  /** types of the original function results */
   results: binaryen.Type[];
 
+  /** gradient types for the original function results */
   resultsGrad: binaryen.Type[];
 
   /** info about variables from the original function, including parameters */
   vars: Var[];
 
+  /** types of the forward pass parameters */
   fwdParams: binaryen.Type[];
 
+  /** types of the backward pass parameters */
   bwdParams: binaryen.Type[];
 
   /** types of variables in the forward pass, including parameters */
@@ -48,11 +76,13 @@ class Autodiff {
   /** types of variables in the backward pass, including parameters */
   bwdVars: binaryen.Type[];
 
-  /** forward pass expressions to save as locals, in order by field index */
-  fwdFields: Map<binaryen.ExpressionRef, number>;
+  /** forward pass local indices for all field indices in tape struct */
+  fwdFields: number[];
 
+  /** backward pass local indices for all field indices in tape struct */
   bwdFields: number[];
 
+  /** backward pass local index for an empty tuple variable */
   voidGrad: number;
 
   /** backward pass body, in reverse order */
@@ -60,6 +90,7 @@ class Autodiff {
 
   constructor(
     private mod: binaryen.Module,
+    private names: Map<string, Names>,
     f: binaryen.FunctionInfo,
     private tape: Tape,
   ) {
@@ -86,18 +117,15 @@ class Autodiff {
       }),
     ];
 
-    this.fwdFields = new Map(
-      tape.fwd.map((ref) => {
-        const index = this.fwdVars.length;
-        this.fwdVars.push(binaryen.getExpressionType(ref));
-        return [ref, index];
-      }),
-    );
-    this.bwdFields = tape.fwd.map((ref) => {
-      const index = this.bwdVars.length;
-      this.bwdVars.push(binaryen.getExpressionType(ref));
-      return index;
-    });
+    this.fwdFields = [];
+    this.bwdFields = [];
+    for (let i = 0; i < tape.fields; ++i) {
+      this.fwdFields.push(this.fwdVars.length);
+      this.bwdFields.push(this.bwdVars.length);
+      const { type } = util.structTypeGetField(tape.struct, i);
+      this.fwdVars.push(type);
+      this.bwdVars.push(type);
+    }
 
     this.voidGrad = this.bwdVars.length;
     this.bwdVars.push(binaryen.createType([]));
@@ -126,7 +154,13 @@ class Autodiff {
   }
 
   untape(ref: binaryen.ExpressionRef): binaryen.ExpressionRef {
-    return this.bwdFields[util.unwrap(this.tape.bwd.get(ref))];
+    const load = util.unwrap(this.tape.loads.get(ref));
+    switch (load.kind) {
+      case LoadKind.Const:
+        return this.mod.f64.const(load.value);
+      case LoadKind.Field:
+        return this.get(this.bwdFields[load.index]);
+    }
   }
 
   block(ref: binaryen.ExpressionRef, info: binaryen.BlockInfo): Result {
@@ -137,6 +171,84 @@ class Autodiff {
     const { fwd, bwd } = this.expr(last);
     children.push(fwd);
     return { fwd: this.mod.block(info.name, children, info.type), bwd };
+  }
+
+  call(ref: binaryen.ExpressionRef, info: binaryen.CallInfo): Result {
+    const operands = info.operands.map((operand) => this.expr(operand));
+
+    const { fwd: fwdName, bwd: bwdName } = util.unwrap(
+      this.names.get(info.target),
+    );
+
+    const params = info.operands.map(binaryen.getExpressionType);
+    const results = binaryen.expandType(info.type);
+    const paramsGrad = params.map(gradType);
+    const resultsGrad = results.map(gradType);
+    const field = util.unwrap(this.tape.calls.get(ref));
+
+    const fwdTape = this.fwdFields[field];
+    const returnType = binaryen.createType([
+      ...results,
+      ...resultsGrad,
+      this.fwdVars[fwdTape],
+    ]);
+    const tuple = this.makeFwd(returnType);
+    const call = this.mod.local.tee(
+      tuple,
+      this.mod.call(
+        fwdName,
+        [
+          ...operands.map(({ fwd }) => fwd),
+          ...operands.map(() => this.mod.f64.const(0)),
+        ],
+        returnType,
+      ),
+      returnType,
+    );
+
+    const bwdTape = this.bwdFields[field];
+    const gradIn = this.makeBwd(binaryen.createType(paramsGrad));
+    const gradOut = this.makeBwd(binaryen.createType(resultsGrad));
+    operands.forEach(({ bwd }, i) => {
+      this.bwd.push(
+        this.mod.local.set(bwd, this.mod.tuple.extract(this.get(gradIn), i)),
+      );
+    });
+    this.bwd.push(
+      this.mod.local.set(
+        gradIn,
+        this.mod.call(
+          bwdName,
+          [
+            ...operands.map(({ bwd }) => this.get(bwd)),
+            ...resultsGrad.map((_, i) =>
+              this.mod.tuple.extract(this.get(gradOut), i),
+            ),
+            this.get(this.bwdFields[field]),
+          ],
+          binaryen.createType(paramsGrad),
+        ),
+      ),
+    );
+
+    return {
+      fwd: this.mod.block(
+        null,
+        [
+          this.mod.local.set(
+            fwdTape,
+            this.mod.tuple.extract(call, results.length + resultsGrad.length),
+          ),
+          this.mod.tuple.make(
+            results.map((_, i) =>
+              this.mod.tuple.extract(this.fwdGet(tuple), i),
+            ),
+          ),
+        ],
+        info.type,
+      ),
+      bwd: gradOut,
+    };
   }
 
   localGet(ref: binaryen.ExpressionRef, info: binaryen.LocalGetInfo): Result {
@@ -194,29 +306,25 @@ class Autodiff {
         return { fwd: this.mod.f64.sub(left.fwd, right.fwd), bwd: dz };
       }
       case binaryen.MulFloat64: {
-        const x = this.untape(info.left);
-        const y = this.untape(info.right);
         this.bwd.push(
           this.mod.local.set(
             dx,
             this.mod.f64.add(
               this.get(dx),
-              this.mod.f64.mul(this.get(dz), this.get(y)),
+              this.mod.f64.mul(this.get(dz), this.untape(info.right)),
             ),
           ),
           this.mod.local.set(
             dy,
             this.mod.f64.add(
               this.get(dy),
-              this.mod.f64.mul(this.get(dz), this.get(x)),
+              this.mod.f64.mul(this.get(dz), this.untape(info.left)),
             ),
           ),
         );
         return { fwd: this.mod.f64.mul(left.fwd, right.fwd), bwd: dz };
       }
       case binaryen.DivFloat64: {
-        const y = this.untape(info.right);
-        const z = this.untape(ref);
         const dx1 = this.makeBwd(binaryen.f64);
         this.bwd.push(
           this.mod.local.set(dx, this.mod.f64.add(this.get(dx), this.get(dx1))),
@@ -227,10 +335,10 @@ class Autodiff {
               this.mod.f64.mul(
                 this.mod.local.tee(
                   dx1,
-                  this.mod.f64.div(this.get(dz), this.get(y)),
+                  this.mod.f64.div(this.get(dz), this.untape(info.right)),
                   binaryen.f64,
                 ),
-                this.get(z),
+                this.untape(ref),
               ),
             ),
           ),
@@ -249,6 +357,8 @@ class Autodiff {
     switch (info.id) {
       case binaryen.BlockId:
         return this.block(ref, info as binaryen.BlockInfo);
+      case binaryen.CallId:
+        return this.call(ref, info as binaryen.CallInfo);
       case binaryen.LocalGetId:
         return this.localGet(ref, info as binaryen.LocalGetInfo);
       case binaryen.LocalSetId:
@@ -264,32 +374,14 @@ class Autodiff {
 
   expr(ref: binaryen.ExpressionRef): Result {
     let { fwd, bwd } = this.expression(ref, binaryen.getExpressionInfo(ref));
-    const index = this.fwdFields.get(ref);
-    if (index !== undefined)
+    const field = this.tape.stores.get(ref);
+    if (field !== undefined) {
+      const index = this.fwdFields[field];
       fwd = this.mod.local.tee(index, fwd, this.fwdVars[index]);
+    }
     return { fwd, bwd };
   }
 }
-
-interface Names {
-  fwd: string;
-  bwd: string;
-}
-
-const makeNames = (names: string[]): Names[] => {
-  const set = new Set(names);
-  return names.map((name) => {
-    // TODO: be smarter to avoid pathological cases, maybe e.g. like this?
-    // https://cs.stackexchange.com/a/39700
-    let fwd = `${name}_fwd`;
-    for (let i = 1; set.has(fwd); ++i) fwd = `${name}_fwd${i}`;
-    set.add(fwd);
-    let bwd = `${name}_bwd`;
-    for (let i = 1; set.has(bwd); ++i) bwd = `${name}_bwd${i}`;
-    set.add(bwd);
-    return { fwd, bwd };
-  });
-};
 
 export interface Gradient {
   fwd: binaryen.FunctionRef;
@@ -308,9 +400,9 @@ export const autodiff = (mod: binaryen.Module): Gradient[] => {
   const names = makeNames(infos.map(({ name }) => name));
   return infos.map((f, i) => {
     const tape = tapes[i];
-    const { fwd: fwdName, bwd: bwdName } = names[i];
+    const { fwd: fwdName, bwd: bwdName } = util.unwrap(names.get(f.name));
 
-    const ad = new Autodiff(mod, f, tape);
+    const ad = new Autodiff(mod, names, f, tape);
     const tapeVar = ad.bwdParams.length - 1;
     const { fwd: fwdBody, bwd: gradResults } = ad.expr(f.body);
 

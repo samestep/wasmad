@@ -1,6 +1,6 @@
 import binaryen from "binaryen";
 import { expect, test } from "vitest";
-import { makeTapes } from "../tape.js";
+import { LoadKind, makeTapes } from "../tape.js";
 import * as util from "../util.js";
 
 test("get param", () => {
@@ -21,10 +21,12 @@ test("get param", () => {
     });
     expect(makeTapes(mod)).toEqual([
       {
-        fwd: [firstGet],
-        bwd: new Map([
-          [firstGet, 0],
-          [secondGet, 0],
+        fields: 1,
+        stores: new Map([[firstGet, 0]]),
+        calls: new Map(),
+        loads: new Map([
+          [firstGet, { kind: LoadKind.Field, index: 0 }],
+          [secondGet, { kind: LoadKind.Field, index: 0 }],
         ]),
         struct,
       },
@@ -43,20 +45,16 @@ test("nonzero constant", () => {
     const mul = mod.f64.mul(tee, get);
     mod.addFunction("foo", binaryen.f64, binaryen.f64, [], mul);
     const [struct] = util.buildType(1, (builder) => {
-      builder.setStructType(0, [
-        {
-          type: binaryen.f64,
-          packedType: util.packedTypeNotPacked,
-          mutable: false,
-        },
-      ]);
+      builder.setStructType(0, []);
     });
     expect(makeTapes(mod)).toEqual([
       {
-        fwd: [fortyTwo],
-        bwd: new Map([
-          [tee, 0],
-          [get, 0],
+        fields: 0,
+        stores: new Map(),
+        calls: new Map(),
+        loads: new Map([
+          [tee, { kind: LoadKind.Const, value: 42 }],
+          [get, { kind: LoadKind.Const, value: 42 }],
         ]),
         struct,
       },
@@ -95,10 +93,15 @@ test("division", () => {
     });
     expect(makeTapes(mod)).toEqual([
       {
-        fwd: [get1, div],
-        bwd: new Map([
+        fields: 2,
+        stores: new Map([
           [get1, 0],
           [div, 1],
+        ]),
+        calls: new Map(),
+        loads: new Map([
+          [get1, { kind: LoadKind.Field, index: 0 }],
+          [div, { kind: LoadKind.Field, index: 1 }],
         ]),
         struct,
       },
@@ -126,8 +129,13 @@ test("get unset variable", () => {
     });
     expect(makeTapes(mod)).toEqual([
       {
-        fwd: [get0],
-        bwd: new Map([[get0, 0]]),
+        fields: 1,
+        stores: new Map([[get0, 0]]),
+        calls: new Map(),
+        loads: new Map([
+          [get0, { kind: LoadKind.Field, index: 0 }],
+          [get1, { kind: LoadKind.Const, value: 0 }],
+        ]),
         struct,
       },
     ]);

@@ -1,5 +1,5 @@
 (module
-  (func (param f64) (result f64)
+  (func $f (param f64) (result f64)
     (f64.mul
       (local.tee 0
         (f64.mul
