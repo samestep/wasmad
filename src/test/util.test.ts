@@ -7,16 +7,16 @@ describe("buildType", () => {
   goldenfile("struct.wat", () => {
     const mod = new binaryen.Module();
     try {
-      const [struct] = util.buildType(1, (builder) => {
-        builder.setStructType(0, [
+      const type = util.typeFromHeapType(
+        util.buildStructType([
           {
             type: binaryen.i32,
             packedType: util.packedTypeNotPacked,
             mutable: false,
           },
-        ]);
-      });
-      const type = util.typeFromHeapType(struct, false);
+        ]),
+        false,
+      );
       mod.addFunction("foo", type, type, [], mod.local.get(0, type));
       return mod.emitText();
     } finally {

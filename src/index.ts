@@ -1,5 +1,6 @@
 import binaryen from "binaryen";
 import { LoadKind, Tape, makeTapes } from "./tape.js";
+import { unit } from "./type.js";
 import * as util from "./util.js";
 
 interface Names {
@@ -119,16 +120,15 @@ class Autodiff {
 
     this.fwdFields = [];
     this.bwdFields = [];
-    for (let i = 0; i < tape.fields; ++i) {
+    for (const { type } of util.structTypeGetFields(tape.struct)) {
       this.fwdFields.push(this.fwdVars.length);
       this.bwdFields.push(this.bwdVars.length);
-      const { type } = util.structTypeGetField(tape.struct, i);
       this.fwdVars.push(type);
       this.bwdVars.push(type);
     }
 
     this.voidGrad = this.bwdVars.length;
-    this.bwdVars.push(binaryen.createType([]));
+    this.bwdVars.push(unit);
 
     this.bwd = [];
   }

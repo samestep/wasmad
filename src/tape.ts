@@ -182,7 +182,7 @@ export const makeTapes = (mod: binaryen.Module): Tape[] => {
   const indices = util.funcIndicesByName(mod);
   const n = mod.getNumFunctions();
   const blocks: Block[] = [];
-  const types = util.buildType(n, (builder) => {
+  const types = util.buildTypes(n, (builder) => {
     builder.createRecGroup(0, n);
     const temps: binaryen.Type[] = [];
     for (let i = 0; i < n; ++i)

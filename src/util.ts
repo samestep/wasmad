@@ -11,6 +11,18 @@ export const unwrap = <T>(x: T | undefined, f?: () => string): T => {
   return x;
 };
 
+/**
+ * Do not use if `undefined` is a value of `V`.
+ * @returns either `m.get(k)` or `f()`; in latter case, inserts result into `m`
+ */
+export const cached = <K, V>(k: K, m: Map<K, V>, f: () => V): V => {
+  let v = m.get(k);
+  if (v !== undefined) return v;
+  v = f();
+  m.set(k, v);
+  return v;
+};
+
 export const funcIndicesByName = (
   mod: binaryen.Module,
 ): Map<string, number> => {
@@ -49,8 +61,35 @@ interface Internal {
   __i32_load(pointer: Pointer<number>): number;
   _free(pointer: Pointer<any>): void;
 
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L107 */
+  _BinaryenTypeStructref(): binaryen.Type;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L108 */
+  _BinaryenTypeArrayref(): binaryen.Type;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L113 */
+  _BinaryenTypeNullref(): binaryen.Type;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L114 */
+  _BinaryenTypeNullExternref(): binaryen.Type;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L115 */
+  _BinaryenTypeNullFuncref(): binaryen.Type;
+
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L136 */
   _BinaryenPackedTypeNotPacked(): BinaryenPackedType;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L160 */
+  _BinaryenHeapTypeIsSignature(heapType: BinaryenHeapType): Bool;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L161 */
+  _BinaryenHeapTypeIsStruct(heapType: BinaryenHeapType): Bool;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L162 */
+  _BinaryenHeapTypeIsArray(heapType: BinaryenHeapType): Bool;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L168-L169 */
+  _BinaryenStructTypeGetNumFields(heapType: BinaryenHeapType): BinaryenIndex;
 
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L170-L171 */
   _BinaryenStructTypeGetFieldType(
@@ -69,6 +108,23 @@ interface Internal {
     heapType: BinaryenHeapType,
     index: BinaryenIndex,
   ): Bool;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L176-L177 */
+  _BinaryenArrayTypeGetElementType(heapType: BinaryenHeapType): binaryen.Type;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L178-L179 */
+  _BinaryenArrayTypeGetElementPackedType(
+    heapType: BinaryenHeapType,
+  ): BinaryenPackedType;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L180 */
+  _BinaryenArrayTypeIsElementMutable(heapType: BinaryenHeapType): Bool;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L186 */
+  _BinaryenTypeGetHeapType(type: binaryen.Type): BinaryenHeapType;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L187 */
+  _BinaryenTypeIsNullable(type: binaryen.Type): Bool;
 
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L188-L189 */
   _BinaryenTypeFromHeapType(
@@ -118,6 +174,15 @@ interface Internal {
     numFields: Int,
   ): void;
 
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3553-L3558 */
+  _TypeBuilderSetArrayType(
+    builder: TypeBuilderRef,
+    index: BinaryenIndex,
+    elementType: binaryen.Type,
+    elementPackedType: BinaryenPackedType,
+    elementMutable: Int,
+  ): void;
+
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3559-L3562 */
   _TypeBuilderGetTempHeapType(
     builder: TypeBuilderRef,
@@ -160,8 +225,28 @@ const withAlloc = <T>(size: number, f: (pointer: Pointer<any>) => T): T => {
   }
 };
 
+export const structref: binaryen.Type = internal._BinaryenTypeStructref();
+
+export const arrayref: binaryen.Type = internal._BinaryenTypeArrayref();
+
+export const nullref: binaryen.Type = internal._BinaryenTypeNullref();
+
+export const nullexternref: binaryen.Type =
+  internal._BinaryenTypeNullExternref();
+
+export const nullfuncref: binaryen.Type = internal._BinaryenTypeNullFuncref();
+
 export const packedTypeNotPacked: BinaryenPackedType =
   internal._BinaryenPackedTypeNotPacked();
+
+export const heapTypeIsSignature = (heapType: BinaryenHeapType): boolean =>
+  !!internal._BinaryenHeapTypeIsSignature(heapType);
+
+export const heapTypeIsStruct = (heapType: BinaryenHeapType): boolean =>
+  !!internal._BinaryenHeapTypeIsStruct(heapType);
+
+export const heapTypeIsArray = (heapType: BinaryenHeapType): boolean =>
+  !!internal._BinaryenHeapTypeIsArray(heapType);
 
 export interface Field {
   type: binaryen.Type;
@@ -169,14 +254,36 @@ export interface Field {
   mutable: boolean;
 }
 
-export const structTypeGetField = (
+export const structTypeGetFields = (heapType: BinaryenHeapType): Field[] => {
+  const n = internal._BinaryenStructTypeGetNumFields(heapType);
+  const fields = [];
+  for (let i = 0; i < n; ++i)
+    fields.push({
+      type: internal._BinaryenStructTypeGetFieldType(heapType, i),
+      packedType: internal._BinaryenStructTypeGetFieldPackedType(heapType, i),
+      mutable: !!internal._BinaryenStructTypeIsFieldMutable(heapType, i),
+    });
+  return fields;
+};
+
+export const arrayTypeGetElementType = (
   heapType: BinaryenHeapType,
-  index: BinaryenIndex,
-): Field => ({
-  type: internal._BinaryenStructTypeGetFieldType(heapType, index),
-  packedType: internal._BinaryenStructTypeGetFieldPackedType(heapType, index),
-  mutable: !!internal._BinaryenStructTypeIsFieldMutable(heapType, index),
-});
+): binaryen.Type => internal._BinaryenArrayTypeGetElementType(heapType);
+
+export const arrayTypeGetElementPackedType = (
+  heapType: BinaryenHeapType,
+): BinaryenPackedType =>
+  internal._BinaryenArrayTypeGetElementPackedType(heapType);
+
+export const arrayTypeIsElementMutable = (
+  heapType: BinaryenHeapType,
+): boolean => !!internal._BinaryenArrayTypeIsElementMutable(heapType);
+
+export const typeGetHeapType = (type: binaryen.Type): BinaryenHeapType =>
+  internal._BinaryenTypeGetHeapType(type);
+
+export const typeIsNullable = (type: binaryen.Type): boolean =>
+  !!internal._BinaryenTypeIsNullable(type);
 
 export const typeFromHeapType = (
   heapType: BinaryenHeapType,
@@ -254,6 +361,21 @@ export class TypeBuilder {
     });
   }
 
+  setArrayType(
+    index: BinaryenIndex,
+    elementType: binaryen.Type,
+    elementPackedType: BinaryenPackedType,
+    elementMutable: boolean,
+  ): void {
+    internal._TypeBuilderSetArrayType(
+      this.ref,
+      index,
+      elementType,
+      elementPackedType,
+      toBool(elementMutable),
+    );
+  }
+
   getTempHeapType(index: BinaryenIndex): BinaryenHeapType {
     return internal._TypeBuilderGetTempHeapType(this.ref, index);
   }
@@ -272,7 +394,7 @@ export class TypeBuilder {
 }
 
 /** Construct a recursive type. */
-export const buildType = (
+export const buildTypes = (
   size: BinaryenIndex,
   f: (builder: TypeBuilder) => void,
 ): BinaryenHeapType[] => {
@@ -302,4 +424,22 @@ export const buildType = (
       types.push(internal.__i32_load(heapTypes + 4 * i));
     return types;
   });
+};
+
+export const buildStructType = (fields: Field[]): BinaryenHeapType => {
+  const [heapType] = buildTypes(1, (builder) => {
+    builder.setStructType(0, fields);
+  });
+  return heapType;
+};
+
+export const buildArrayType = (
+  elementType: binaryen.Type,
+  elementPackedType: BinaryenPackedType,
+  elementMutable: boolean,
+): BinaryenHeapType => {
+  const [heapType] = buildTypes(1, (builder) => {
+    builder.setArrayType(0, elementType, elementPackedType, elementMutable);
+  });
+  return heapType;
 };

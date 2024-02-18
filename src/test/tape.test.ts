@@ -10,15 +10,6 @@ test("get param", () => {
     const secondGet = mod.local.get(0, binaryen.f64);
     const mul = mod.f64.mul(firstGet, secondGet);
     mod.addFunction("foo", binaryen.f64, binaryen.f64, [], mul);
-    const [struct] = util.buildType(1, (builder) => {
-      builder.setStructType(0, [
-        {
-          type: binaryen.f64,
-          packedType: util.packedTypeNotPacked,
-          mutable: false,
-        },
-      ]);
-    });
     expect(makeTapes(mod)).toEqual([
       {
         fields: 1,
@@ -28,7 +19,13 @@ test("get param", () => {
           [firstGet, { kind: LoadKind.Field, index: 0 }],
           [secondGet, { kind: LoadKind.Field, index: 0 }],
         ]),
-        struct,
+        struct: util.buildStructType([
+          {
+            type: binaryen.f64,
+            packedType: util.packedTypeNotPacked,
+            mutable: false,
+          },
+        ]),
       },
     ]);
   } finally {
@@ -44,9 +41,6 @@ test("nonzero constant", () => {
     const get = mod.local.get(0, binaryen.f64);
     const mul = mod.f64.mul(tee, get);
     mod.addFunction("foo", binaryen.f64, binaryen.f64, [], mul);
-    const [struct] = util.buildType(1, (builder) => {
-      builder.setStructType(0, []);
-    });
     expect(makeTapes(mod)).toEqual([
       {
         fields: 0,
@@ -56,7 +50,7 @@ test("nonzero constant", () => {
           [tee, { kind: LoadKind.Const, value: 42 }],
           [get, { kind: LoadKind.Const, value: 42 }],
         ]),
-        struct,
+        struct: util.buildStructType([]),
       },
     ]);
   } finally {
@@ -77,20 +71,6 @@ test("division", () => {
       [],
       div,
     );
-    const [struct] = util.buildType(1, (builder) => {
-      builder.setStructType(0, [
-        {
-          type: binaryen.f64,
-          packedType: util.packedTypeNotPacked,
-          mutable: false,
-        },
-        {
-          type: binaryen.f64,
-          packedType: util.packedTypeNotPacked,
-          mutable: false,
-        },
-      ]);
-    });
     expect(makeTapes(mod)).toEqual([
       {
         fields: 2,
@@ -103,7 +83,18 @@ test("division", () => {
           [get1, { kind: LoadKind.Field, index: 0 }],
           [div, { kind: LoadKind.Field, index: 1 }],
         ]),
-        struct,
+        struct: util.buildStructType([
+          {
+            type: binaryen.f64,
+            packedType: util.packedTypeNotPacked,
+            mutable: false,
+          },
+          {
+            type: binaryen.f64,
+            packedType: util.packedTypeNotPacked,
+            mutable: false,
+          },
+        ]),
       },
     ]);
   } finally {
@@ -118,15 +109,6 @@ test("get unset variable", () => {
     const get1 = mod.local.get(1, binaryen.f64);
     const mul = mod.f64.mul(get0, get1);
     mod.addFunction("foo", binaryen.f64, binaryen.f64, [binaryen.f64], mul);
-    const [struct] = util.buildType(1, (builder) => {
-      builder.setStructType(0, [
-        {
-          type: binaryen.f64,
-          packedType: util.packedTypeNotPacked,
-          mutable: false,
-        },
-      ]);
-    });
     expect(makeTapes(mod)).toEqual([
       {
         fields: 1,
@@ -136,7 +118,13 @@ test("get unset variable", () => {
           [get0, { kind: LoadKind.Field, index: 0 }],
           [get1, { kind: LoadKind.Const, value: 0 }],
         ]),
-        struct,
+        struct: util.buildStructType([
+          {
+            type: binaryen.f64,
+            packedType: util.packedTypeNotPacked,
+            mutable: false,
+          },
+        ]),
       },
     ]);
   } finally {
