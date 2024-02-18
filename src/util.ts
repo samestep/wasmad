@@ -393,7 +393,7 @@ export class TypeBuilder {
   }
 }
 
-/** Construct a recursive type. */
+/** Construct heap types. */
 export const buildTypes = (
   size: BinaryenIndex,
   f: (builder: TypeBuilder) => void,
