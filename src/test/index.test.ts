@@ -1,5 +1,5 @@
 import binaryen from "binaryen";
-import { describe, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import * as wasmad from "../index.js";
 import * as util from "../util.js";
 import { slurp } from "./util.js";
@@ -22,112 +22,147 @@ const compile = async <T extends WebAssembly.Exports>(
   return instance.exports as T;
 };
 
-type Unop = {
-  fwd: (a: number, da: number) => [number, number, any];
-  bwd: (da: number, db: number, t: any) => [number, number];
-};
+interface AD {
+  orig?: WebAssembly.Exports;
+  fwd?: WebAssembly.Exports;
+  bwd?: WebAssembly.Exports;
+}
 
-type Binop = {
-  fwd: (a: number, b: number, da: number, db: number) => [number, number, any];
-  bwd: (da: number, db: number, dc: number, t: any) => [number, number];
-};
+interface Unop<K extends string> extends AD {
+  fwd: { [k in K]: (a: number, da: number) => [number, number, any] };
+  bwd: { [k in K]: (da: number, db: number, t: any) => [number, number] };
+}
 
-const autodiff = async <T extends WebAssembly.Exports>(
-  filename: string,
-  funcname: string,
-): Promise<T> => {
+interface Binop<K extends string> extends AD {
+  fwd: {
+    [k in K]: (
+      a: number,
+      b: number,
+      da: number,
+      db: number,
+    ) => [number, number, any];
+  };
+  bwd: {
+    [k in K]: (da: number, db: number, dc: number, t: any) => [number, number];
+  };
+}
+
+interface Names {
+  name: string;
+  orig: string;
+  fwd: string;
+  bwd: string;
+}
+
+const autodiff = async <T extends AD>(filename: string): Promise<T> => {
   const mod = binaryen.parseText(await slurp(filename));
   try {
-    const i = util.unwrap(util.funcIndicesByName(mod).get(funcname));
     mod.setFeatures(binaryen.Features.Multivalue);
     mod.setFeatures(binaryen.Features.GC);
-    const { fwd, bwd } = wasmad.autodiff(mod)[i];
-    mod.addFunctionExport(binaryen.getFunctionInfo(fwd).name, "fwd");
-    mod.addFunctionExport(binaryen.getFunctionInfo(bwd).name, "bwd");
+    const set = new util.Names();
+    const n = mod.getNumExports();
+    for (let i = 0; i < n; ++i)
+      set.add(binaryen.getExportInfo(mod.getExportByIndex(i)).name);
+    const names = wasmad.autodiff(mod).map((f, i): Names => {
+      const name = binaryen.getFunctionInfo(mod.getFunctionByIndex(i)).name;
+      const fwdName = binaryen.getFunctionInfo(f.fwd).name;
+      const bwdName = binaryen.getFunctionInfo(f.bwd).name;
+      const orig = set.make(name);
+      const fwd = set.make(fwdName);
+      const bwd = set.make(bwdName);
+      mod.addFunctionExport(name, orig);
+      mod.addFunctionExport(fwdName, fwd);
+      mod.addFunctionExport(bwdName, bwd);
+      return { name, orig, fwd, bwd };
+    });
     const binary = mod.emitBinary();
-    return await compile<T>(binary);
+    const exports = await compile<any>(binary);
+    const origs: WebAssembly.Exports = {};
+    const fwds: WebAssembly.Exports = {};
+    const bwds: WebAssembly.Exports = {};
+    for (const { name, orig, fwd, bwd } of names) {
+      origs[name] = exports[orig];
+      fwds[name] = exports[fwd];
+      bwds[name] = exports[bwd];
+    }
+    return { orig: origs, fwd: fwds, bwd: bwds } as T;
   } finally {
     mod.dispose();
   }
 };
 
 test("subtraction", async () => {
-  const { fwd, bwd } = await autodiff<Binop>("sub.wat", "sub");
+  const { fwd, bwd } = await autodiff<Binop<"sub">>("sub.wat");
   let da = 0;
   let db = 0;
-  let [c, dc, t] = fwd(5, 3, da, db);
+  let [c, dc, t] = fwd.sub(5, 3, da, db);
   expect([c, dc]).toEqual([2, 0]);
   dc = 1;
-  [da, db] = bwd(da, db, dc, t);
+  [da, db] = bwd.sub(da, db, dc, t);
   expect([da, db]).toEqual([dc, -dc]);
 });
 
 test("division", async () => {
-  const { fwd, bwd } = await autodiff<Binop>("div.wat", "div");
+  const { fwd, bwd } = await autodiff<Binop<"div">>("div.wat");
   const a = 5;
   const b = 3;
   let da = 0;
   let db = 0;
-  let [c, dc, t] = fwd(a, b, da, db);
+  let [c, dc, t] = fwd.div(a, b, da, db);
   expect([c, dc]).toEqual([a / b, 0]);
   dc = 1;
-  [da, db] = bwd(da, db, dc, t);
+  [da, db] = bwd.div(da, db, dc, t);
   expect([da, db]).toEqual([dc / b, dc * (-a / b ** 2)]);
 });
 
 test("square", async () => {
-  const { fwd, bwd } = await autodiff<Unop>("square.wat", "sqr");
+  const { fwd, bwd } = await autodiff<Unop<"sqr">>("square.wat");
   const x = 3;
   let dx = 0;
-  let [y, dy, t] = fwd(x, dx);
+  let [y, dy, t] = fwd.sqr(x, dx);
   expect([y, dy]).toEqual([9, 0]);
   dx = 5;
   dy = 1;
-  expect(bwd(dx, dy, t)).toBe(dx + dy * 2 * x);
+  expect(bwd.sqr(dx, dy, t)).toBe(dx + dy * 2 * x);
 });
 
 test("tesseract", async () => {
-  const { fwd, bwd } = await autodiff<Unop>("tesseract.wat", "f");
+  const { fwd, bwd } = await autodiff<Unop<"f">>("tesseract.wat");
   const x = 5;
   const dx = 0;
-  const [y, dy, t] = fwd(x, dx);
+  const [y, dy, t] = fwd.f(x, dx);
   expect([y, dy]).toEqual([x ** 4, 0]);
-  expect(bwd(dx, 1, t)).toBe(4 * x ** 3);
+  expect(bwd.f(dx, 1, t)).toBe(4 * x ** 3);
 });
 
 test("polynomial", async () => {
-  const { fwd, bwd } = await autodiff<Binop>("polynomial.wat", "f");
+  const { fwd, bwd } = await autodiff<Binop<"f">>("polynomial.wat");
   const x = 2;
   const y = 2;
   const dx = 0;
   const dy = 0;
-  const [z, dz, t] = fwd(x, y, dx, dy);
+  const [z, dz, t] = fwd.f(x, y, dx, dy);
   expect([z, dz]).toEqual([
     2 * x ** 3 + 4 * x ** 2 * y + x * y ** 5 + y ** 2 - 7,
     0,
   ]);
-  expect(bwd(dx, dy, 1, t)).toEqual([
+  expect(bwd.f(dx, dy, 1, t)).toEqual([
     6 * x ** 2 + 8 * x * y + y ** 5,
     4 * x ** 2 + 5 * x * y ** 4 + 2 * y,
   ]);
 });
 
-describe("composition", () => {
+test("composition", async () => {
+  const { fwd, bwd } = await autodiff<Unop<"gf" | "fg">>("compose.wat");
   const x = 5;
 
-  test("g ∘ f", async () => {
-    const { fwd, bwd } = await autodiff<Unop>("compose.wat", "gf");
-    const [y, , t] = fwd(x, 0);
-    expect(y).toBe(x ** 2 + 1);
-    expect(bwd(0, 1, t)).toBe(2 * x);
-  });
+  let [y, , t] = fwd.gf(x, 0);
+  expect(y).toBe(x ** 2 + 1);
+  expect(bwd.gf(0, 1, t)).toBe(2 * x);
 
-  test("f ∘ g", async () => {
-    const { fwd, bwd } = await autodiff<Unop>("compose.wat", "fg");
-    const [y, , t] = fwd(x, 0);
-    expect(y).toBe((x + 1) ** 2);
-    expect(bwd(0, 1, t)).toBe(2 * (x + 1));
-  });
+  [y, , t] = fwd.fg(x, 0);
+  expect(y).toBe((x + 1) ** 2);
+  expect(bwd.fg(0, 1, t)).toBe(2 * (x + 1));
 });
 
 test("arrays", async () => {

@@ -23,6 +23,30 @@ export const cached = <K, V>(k: K, m: Map<K, V>, f: () => V): V => {
   return v;
 };
 
+/** Finds names similar to desired ones, to avoid conflicts. */
+export class Names {
+  private set: Set<string>;
+
+  constructor() {
+    this.set = new Set();
+  }
+
+  /** Add `name` to the set, throwing if it is already present. */
+  add(name: string): void {
+    if (this.set.has(name)) throw Error(`Name conflict: ${name}`);
+    this.set.add(name);
+  }
+
+  /** Make up a name similar to `name`, add it to the set, and return it. */
+  make(name: string): string {
+    // TODO: be smarter to avoid pathological cases, maybe e.g. like this?
+    // https://cs.stackexchange.com/a/39700
+    for (let i = 1; this.set.has(name); ++i) name = `${name}${i}`;
+    this.set.add(name);
+    return name;
+  }
+}
+
 export const funcIndicesByName = (
   mod: binaryen.Module,
 ): Map<string, number> => {

@@ -9,17 +9,12 @@ interface Names {
 }
 
 const makeNames = (names: string[]): Map<string, Names> => {
-  const set = new Set(names);
+  const set = new util.Names();
+  for (const name of names) set.add(name);
   const gradNames = new Map<string, Names>();
   for (const name of names) {
-    // TODO: be smarter to avoid pathological cases, maybe e.g. like this?
-    // https://cs.stackexchange.com/a/39700
-    let fwd = `${name}_fwd`;
-    for (let i = 1; set.has(fwd); ++i) fwd = `${name}_fwd${i}`;
-    set.add(fwd);
-    let bwd = `${name}_bwd`;
-    for (let i = 1; set.has(bwd); ++i) bwd = `${name}_bwd${i}`;
-    set.add(bwd);
+    const fwd = set.make(`${name}_fwd`);
+    const bwd = set.make(`${name}_bwd`);
     gradNames.set(name, { fwd, bwd });
   }
   return gradNames;
