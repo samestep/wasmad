@@ -87,6 +87,12 @@
           (local.get $iss)
           (local.get $i))
         (local.get $j)))
+    (array.set $i32ss
+      (local.get $iss)
+      (local.get $j)
+      (array.get $i32ss
+        (local.get $jss)
+        (local.get $i)))
     (array.set $i32s
       (array.get $i32ss
         (local.get $iss)
@@ -97,12 +103,6 @@
           (local.get $jss)
           (local.get $i))
         (local.get $j)))
-    (array.set $i32ss
-      (local.get $iss)
-      (local.get $j)
-      (array.get $i32ss
-        (local.get $jss)
-        (local.get $i)))
     (local.set $k
       (array.get $i32s
         (array.get $i32ss
@@ -131,6 +131,12 @@
           (local.get $xss)
           (local.get $k))
         (local.get $l)))
+    (array.set $f64ss
+      (local.get $xss)
+      (local.get $l)
+      (array.get $f64ss
+        (local.get $yss)
+        (local.get $k)))
     (array.set $f64s
       (array.get $f64ss
         (local.get $xss)
@@ -141,13 +147,7 @@
           (local.get $yss)
           (local.get $k))
         (local.get $l)))
-    (array.set $f64ss
-      (local.get $xss)
-      (local.get $l)
-      (array.get $f64ss
-        (local.get $yss)
-        (local.get $k)))
-    (f64.mul
+    (f64.div
       (array.get $f64s
         (array.get $f64ss
           (local.get $xss)
