@@ -123,7 +123,8 @@ class Taper implements Block {
   }
 
   const(ref: binaryen.ExpressionRef, info: binaryen.ConstInfo): Value {
-    if (typeof info.value !== "number") throw Error("Unsupported constant");
+    if (typeof info.value !== "number")
+      throw Error(`Unsupported constant kind: ${typeof info.value}`);
     return { kind: ValueKind.Const, value: info.value };
   }
 
@@ -163,7 +164,7 @@ class Taper implements Block {
       case binaryen.BinaryId:
         return this.binary(ref, info as binaryen.BinaryInfo);
       default:
-        throw Error("Unsupported expression");
+        throw Error(`Unsupported expression ID: ${info.id}`);
     }
   }
 

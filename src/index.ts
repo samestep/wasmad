@@ -267,7 +267,7 @@ class Autodiff {
 
   const(ref: binaryen.ExpressionRef, info: binaryen.ConstInfo): Result {
     if (typeof info.value !== "number")
-      throw Error("Unsupported constant value");
+      throw Error(`Unsupported constant kind: ${typeof info.value}`);
     switch (info.type) {
       case binaryen.f64:
         return {
@@ -275,7 +275,7 @@ class Autodiff {
           bwd: this.makeBwd(binaryen.f64),
         };
       default:
-        throw Error("Unsupported constant type");
+        throw Error(`Unsupported constant type: ${info.type}`);
     }
   }
 
@@ -341,7 +341,7 @@ class Autodiff {
         return { fwd: this.mod.f64.div(left.fwd, right.fwd), bwd: dz };
       }
       default:
-        throw Error("Unsupported binary operation");
+        throw Error(`Unsupported binary operation: ${info.op}`);
     }
   }
 
@@ -363,7 +363,7 @@ class Autodiff {
       case binaryen.BinaryId:
         return this.binary(ref, info as binaryen.BinaryInfo);
       default:
-        throw Error("Unsupported expression");
+        throw Error(`Unsupported expression ID: ${info.id}`);
     }
   }
 
