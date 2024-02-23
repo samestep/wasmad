@@ -1,13 +1,26 @@
 import binaryen from "binaryen";
-import { expect, test } from "vitest";
+import path from "path";
+import { beforeAll, expect, test } from "vitest";
 import * as wasmad from "../index.js";
 import * as util from "../util.js";
-import { slurp } from "./util.js";
+import { dir, mkdirp, rmrf, slurp, spit } from "./util.js";
+
+const out = "out";
+
+beforeAll(async () => {
+  await rmrf(out);
+  await mkdirp(out);
+});
+
+const features =
+  binaryen.Features.Multivalue |
+  binaryen.Features.ReferenceTypes |
+  binaryen.Features.GC;
 
 const wat = async (text: string): Promise<Uint8Array> => {
   const mod = binaryen.parseText(text);
   try {
-    mod.setFeatures(binaryen.Features.GC);
+    mod.setFeatures(features);
     return mod.emitBinary();
   } finally {
     mod.dispose();
@@ -57,12 +70,13 @@ interface Names {
 const autodiff = async <T extends AD>(filename: string): Promise<T> => {
   const mod = binaryen.parseText(await slurp(filename));
   try {
-    mod.setFeatures(binaryen.Features.Multivalue);
-    mod.setFeatures(binaryen.Features.GC);
+    mod.setFeatures(features);
+
     const set = new util.Names();
     const n = mod.getNumExports();
     for (let i = 0; i < n; ++i)
       set.add(binaryen.getExportInfo(mod.getExportByIndex(i)).name);
+
     const names = wasmad.autodiff(mod).map((f, i): Names => {
       const name = binaryen.getFunctionInfo(mod.getFunctionByIndex(i)).name;
       const fwdName = binaryen.getFunctionInfo(f.fwd).name;
@@ -75,8 +89,15 @@ const autodiff = async <T extends AD>(filename: string): Promise<T> => {
       mod.addFunctionExport(bwdName, bwd);
       return { name, orig, fwd, bwd };
     });
+
+    const filepath = path.join(out, filename);
+    await spit(filepath, mod.emitText());
+    if (!mod.validate())
+      throw Error(`invalid module: ${path.join(dir, filepath)}`);
+
     const binary = mod.emitBinary();
     const exports = await compile<any>(binary);
+
     const origs: WebAssembly.Exports = {};
     const fwds: WebAssembly.Exports = {};
     const bwds: WebAssembly.Exports = {};

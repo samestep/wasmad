@@ -57,6 +57,19 @@ export const funcIndicesByName = (
   return indices;
 };
 
+/** Like `tuple.make` on `binaryen.Module`, but accepts singletons. */
+export const tupleMake = (
+  mod: binaryen.Module,
+  elements: binaryen.ExpressionRef[],
+): binaryen.ExpressionRef => {
+  switch (elements.length) {
+    case 1:
+      return elements[0];
+    default:
+      return mod.tuple.make(elements);
+  }
+};
+
 type Bool = number;
 
 type Int = number;

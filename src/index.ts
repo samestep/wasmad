@@ -234,7 +234,8 @@ class Autodiff {
             fwdTape,
             this.mod.tuple.extract(call, results.length + resultsGrad.length),
           ),
-          this.mod.tuple.make(
+          util.tupleMake(
+            this.mod,
             results.map((_, i) =>
               this.mod.tuple.extract(this.fwdGet(tuple), i),
             ),
@@ -416,7 +417,7 @@ export const autodiff = (mod: binaryen.Module): Gradient[] => {
         null,
         [
           mod.local.set(out, fwdBody),
-          mod.tuple.make([
+          util.tupleMake(mod, [
             ...ad.results.map((_, i) => mod.tuple.extract(ad.fwdGet(out), i)),
             ...ad.resultsGrad.map(() => mod.f64.const(0)),
             util.structNew(
@@ -447,12 +448,16 @@ export const autodiff = (mod: binaryen.Module): Gradient[] => {
           ),
           mod.local.set(
             gradResults,
-            mod.tuple.make(
+            util.tupleMake(
+              mod,
               ad.resultsGrad.map((_, i) => ad.get(ad.paramsGrad.length + i)),
             ),
           ),
           ...ad.bwd.reverse(),
-          mod.tuple.make(ad.paramsGrad.map((_, index) => ad.get(index))),
+          util.tupleMake(
+            mod,
+            ad.paramsGrad.map((_, index) => ad.get(index)),
+          ),
         ],
         bwdResult,
       ),
