@@ -186,6 +186,83 @@ interface Internal {
     signed_: Bool,
   ): binaryen.ExpressionRef;
 
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L1069-L1072 */
+  _BinaryenArrayNew(
+    module: BinaryenModuleRef,
+    type: BinaryenHeapType,
+    size: binaryen.ExpressionRef,
+    init: binaryen.ExpressionRef,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L1081-L1085 */
+  _BinaryenArrayGet(
+    module: BinaryenModuleRef,
+    ref: binaryen.ExpressionRef,
+    index: binaryen.ExpressionRef,
+    type: binaryen.Type,
+    signed_: Bool,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L1086-L1090 */
+  _BinaryenArraySet(
+    module: BinaryenModuleRef,
+    ref: binaryen.ExpressionRef,
+    index: binaryen.ExpressionRef,
+    value: binaryen.ExpressionRef,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L1091-L1092 */
+  _BinaryenArrayLen(
+    module: BinaryenModuleRef,
+    ref: binaryen.ExpressionRef,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2393-L2394 */
+  _BinaryenStructNewGetNumOperands(expr: binaryen.ExpressionRef): BinaryenIndex;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2395-L2396 */
+  _BinaryenStructNewGetOperandAt(
+    expr: binaryen.ExpressionRef,
+    index: BinaryenIndex,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2441-L2442 */
+  _BinaryenArrayNewGetInit(
+    expr: binaryen.ExpressionRef,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2445-L2446 */
+  _BinaryenArrayNewGetSize(
+    expr: binaryen.ExpressionRef,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2471-L2472 */
+  _BinaryenArrayGetGetRef(expr: binaryen.ExpressionRef): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2475-L2476 */
+  _BinaryenArrayGetGetIndex(
+    expr: binaryen.ExpressionRef,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2479 */
+  _BinaryenArrayGetIsSigned(expr: binaryen.ExpressionRef): Bool;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2485-L2486 */
+  _BinaryenArraySetGetRef(expr: binaryen.ExpressionRef): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2489-L2490 */
+  _BinaryenArraySetGetIndex(
+    expr: binaryen.ExpressionRef,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2493-L2494 */
+  _BinaryenArraySetGetValue(
+    expr: binaryen.ExpressionRef,
+  ): binaryen.ExpressionRef;
+
+  /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L2500-L2501 */
+  _BinaryenArrayLenGetRef(expr: binaryen.ExpressionRef): binaryen.ExpressionRef;
+
   /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3518-L3519 */
   _TypeBuilderErrorReasonSelfSupertype(): TypeBuilderErrorReason;
 
@@ -353,6 +430,123 @@ export const structGet = (
     type,
     toBool(signed ?? false),
   );
+
+export const arrayNew = (
+  mod: binaryen.Module,
+  type: BinaryenHeapType,
+  size: binaryen.ExpressionRef,
+  init: binaryen.ExpressionRef,
+): binaryen.ExpressionRef =>
+  internal._BinaryenArrayNew(mod.ptr, type, size, init);
+
+export const arrayGet = (
+  mod: binaryen.Module,
+  ref: binaryen.ExpressionRef,
+  index: BinaryenIndex,
+  type: binaryen.Type,
+  signed?: boolean,
+): binaryen.ExpressionRef =>
+  internal._BinaryenArrayGet(
+    mod.ptr,
+    ref,
+    index,
+    type,
+    toBool(signed ?? false),
+  );
+
+export const arraySet = (
+  mod: binaryen.Module,
+  ref: binaryen.ExpressionRef,
+  index: binaryen.ExpressionRef,
+  value: binaryen.ExpressionRef,
+): binaryen.ExpressionRef =>
+  internal._BinaryenArraySet(mod.ptr, ref, index, value);
+
+export const arrayLen = (
+  mod: binaryen.Module,
+  ref: binaryen.ExpressionRef,
+): binaryen.ExpressionRef => internal._BinaryenArrayLen(mod.ptr, ref);
+
+export interface StructNewInfo extends binaryen.ExpressionInfo {
+  operands: binaryen.ExpressionRef[];
+}
+
+export interface ArrayNewInfo extends binaryen.ExpressionInfo {
+  init: binaryen.ExpressionRef;
+  size: binaryen.ExpressionRef;
+}
+
+export interface ArrayGetInfo extends binaryen.ExpressionInfo {
+  ref: binaryen.ExpressionRef;
+  index: binaryen.ExpressionRef;
+  isSigned: boolean;
+}
+
+export interface ArraySetInfo extends binaryen.ExpressionInfo {
+  ref: binaryen.ExpressionRef;
+  index: binaryen.ExpressionRef;
+  value: binaryen.ExpressionRef;
+}
+
+export interface ArrayLenInfo extends binaryen.ExpressionInfo {
+  ref: binaryen.ExpressionRef;
+}
+
+export const getExpressionInfo = (
+  expression: binaryen.ExpressionRef,
+): binaryen.ExpressionInfo => {
+  const id = binaryen.getExpressionId(expression);
+  const type = binaryen.getExpressionType(expression);
+  switch (id) {
+    case binaryen.StructNewId: {
+      const n = internal._BinaryenStructNewGetNumOperands(expression);
+      const operands: binaryen.ExpressionRef[] = [];
+      for (let i = 0; i < n; ++i)
+        operands.push(internal._BinaryenStructNewGetOperandAt(expression, i));
+      const info: StructNewInfo = { id, type, operands };
+      return info;
+    }
+    case binaryen.ArrayNewId: {
+      const info: ArrayNewInfo = {
+        id,
+        type,
+        init: internal._BinaryenArrayNewGetInit(expression),
+        size: internal._BinaryenArrayNewGetSize(expression),
+      };
+      return info;
+    }
+    case binaryen.ArrayGetId: {
+      const info: ArrayGetInfo = {
+        id,
+        type,
+        ref: internal._BinaryenArrayGetGetRef(expression),
+        index: internal._BinaryenArrayGetGetIndex(expression),
+        isSigned: !!internal._BinaryenArrayGetIsSigned(expression),
+      };
+      return info;
+    }
+    case binaryen.ArraySetId: {
+      const info: ArraySetInfo = {
+        id,
+        type,
+        ref: internal._BinaryenArraySetGetRef(expression),
+        index: internal._BinaryenArraySetGetIndex(expression),
+        value: internal._BinaryenArraySetGetValue(expression),
+      };
+      return info;
+    }
+    case binaryen.ArrayLenId: {
+      const info: ArrayLenInfo = {
+        id,
+        type,
+        ref: internal._BinaryenArrayLenGetRef(expression),
+      };
+      return info;
+    }
+    default:
+      return binaryen.getExpressionInfo(expression);
+  }
+};
 
 /** https://github.com/WebAssembly/binaryen/blob/version_116/src/binaryen-c.h#L3516 */
 export enum TypeBuilderErrorReason {

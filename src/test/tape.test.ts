@@ -1,6 +1,7 @@
 import binaryen from "binaryen";
 import { expect, test } from "vitest";
 import { LoadKind, makeTapes } from "../tape.js";
+import { Types } from "../type.js";
 import * as util from "../util.js";
 
 test("get param", () => {
@@ -10,15 +11,18 @@ test("get param", () => {
     const secondGet = mod.local.get(0, binaryen.f64);
     const mul = mod.f64.mul(firstGet, secondGet);
     mod.addFunction("foo", binaryen.f64, binaryen.f64, [], mul);
-    expect(makeTapes(mod)).toEqual([
+    expect(makeTapes(new Types(), mod)).toEqual([
       {
         fields: 1,
         stores: new Map([[firstGet, 0]]),
+        grads: new Map(),
+        sets: new Map(),
         calls: new Map(),
         loads: new Map([
           [firstGet, { kind: LoadKind.Field, index: 0 }],
           [secondGet, { kind: LoadKind.Field, index: 0 }],
         ]),
+        gradLoads: new Map(),
         struct: util.buildStructType([
           {
             type: binaryen.f64,
@@ -41,15 +45,18 @@ test("nonzero constant", () => {
     const get = mod.local.get(0, binaryen.f64);
     const mul = mod.f64.mul(tee, get);
     mod.addFunction("foo", binaryen.f64, binaryen.f64, [], mul);
-    expect(makeTapes(mod)).toEqual([
+    expect(makeTapes(new Types(), mod)).toEqual([
       {
         fields: 0,
         stores: new Map(),
+        grads: new Map(),
+        sets: new Map(),
         calls: new Map(),
         loads: new Map([
           [tee, { kind: LoadKind.Const, value: 42 }],
           [get, { kind: LoadKind.Const, value: 42 }],
         ]),
+        gradLoads: new Map(),
         struct: util.buildStructType([]),
       },
     ]);
@@ -71,18 +78,21 @@ test("division", () => {
       [],
       div,
     );
-    expect(makeTapes(mod)).toEqual([
+    expect(makeTapes(new Types(), mod)).toEqual([
       {
         fields: 2,
         stores: new Map([
           [get1, 0],
           [div, 1],
         ]),
+        grads: new Map(),
+        sets: new Map(),
         calls: new Map(),
         loads: new Map([
           [get1, { kind: LoadKind.Field, index: 0 }],
           [div, { kind: LoadKind.Field, index: 1 }],
         ]),
+        gradLoads: new Map(),
         struct: util.buildStructType([
           {
             type: binaryen.f64,
@@ -109,15 +119,18 @@ test("get unset variable", () => {
     const get1 = mod.local.get(1, binaryen.f64);
     const mul = mod.f64.mul(get0, get1);
     mod.addFunction("foo", binaryen.f64, binaryen.f64, [binaryen.f64], mul);
-    expect(makeTapes(mod)).toEqual([
+    expect(makeTapes(new Types(), mod)).toEqual([
       {
         fields: 1,
         stores: new Map([[get0, 0]]),
+        grads: new Map(),
+        sets: new Map(),
         calls: new Map(),
         loads: new Map([
           [get0, { kind: LoadKind.Field, index: 0 }],
           [get1, { kind: LoadKind.Const, value: 0 }],
         ]),
+        gradLoads: new Map(),
         struct: util.buildStructType([
           {
             type: binaryen.f64,

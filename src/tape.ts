@@ -1,4 +1,5 @@
 import binaryen from "binaryen";
+import { Types, becomesMutable, unit } from "./type.js";
 import * as util from "./util.js";
 
 enum ValueKind {
@@ -40,27 +41,45 @@ export interface Block {
   /** field indices for expressions that need to be teed in the forward pass */
   stores: Map<binaryen.ExpressionRef, util.BinaryenIndex>;
 
+  /** field indices for gradients that need to be saved in the forward pass */
+  grads: Map<binaryen.ExpressionRef, util.BinaryenIndex>;
+
+  /** field indices for overwritten gradients from `array.set` expressions */
+  sets: Map<binaryen.ExpressionRef, util.BinaryenIndex>;
+
   /** field indices for the tapes of all the function's call expressions */
   calls: Map<binaryen.ExpressionRef, util.BinaryenIndex>;
 
   /** how to load all the primal values needed in the backward pass */
   loads: Map<binaryen.ExpressionRef, Load>;
+
+  /** how to load all the gradient values needed in the backward pass */
+  gradLoads: Map<binaryen.ExpressionRef, Load>;
 }
 
 class Taper implements Block {
   fields: number;
   stores: Map<binaryen.ExpressionRef, util.BinaryenIndex>;
+  grads: Map<binaryen.ExpressionRef, util.BinaryenIndex>;
+  sets: Map<binaryen.ExpressionRef, util.BinaryenIndex>;
   calls: Map<binaryen.ExpressionRef, util.BinaryenIndex>;
   loads: Map<binaryen.ExpressionRef, Load>;
+  gradLoads: Map<binaryen.ExpressionRef, Load>;
 
   /** current values for the function's variables, used to mimic SSA */
   vars: Value[];
 
-  constructor(f: binaryen.FunctionInfo) {
+  constructor(
+    private types: Types,
+    f: binaryen.FunctionInfo,
+  ) {
     this.fields = 0;
     this.stores = new Map();
+    this.grads = new Map();
+    this.sets = new Map();
     this.calls = new Map();
     this.loads = new Map();
+    this.gradLoads = new Map();
 
     const params = binaryen.expandType(f.params);
     this.vars = [
@@ -88,6 +107,16 @@ class Taper implements Block {
         return value;
       }
     }
+  }
+
+  // TODO: track gradient values just like primal values
+  markGrad(ref: binaryen.ExpressionRef): void {
+    let i = this.grads.get(ref);
+    if (i === undefined) {
+      i = this.fields++;
+      this.grads.set(ref, i);
+    }
+    this.gradLoads.set(ref, { kind: LoadKind.Field, index: i });
   }
 
   save(ref: binaryen.ExpressionRef): Value {
@@ -146,6 +175,44 @@ class Taper implements Block {
     }
   }
 
+  structNew(ref: binaryen.ExpressionRef, info: util.StructNewInfo): Value {
+    if (info.operands.length !== 0)
+      throw Error("Struct initializer not supported");
+    return { kind: ValueKind.Expression, ref };
+  }
+
+  arrayNew(ref: binaryen.ExpressionRef, info: util.ArrayNewInfo): Value {
+    if (info.init !== 0) throw Error("Array initializer not supported");
+    this.expr(info.size);
+    return { kind: ValueKind.Expression, ref };
+  }
+
+  arrayGet(ref: binaryen.ExpressionRef, info: util.ArrayGetInfo): Value {
+    this.expr(info.ref);
+    if (becomesMutable(info.type)) {
+      this.markGrad(info.ref);
+      this.save(info.index);
+    } else this.expr(info.index);
+    return { kind: ValueKind.Expression, ref };
+  }
+
+  arraySet(ref: binaryen.ExpressionRef, info: util.ArraySetInfo): Value {
+    this.expr(info.ref);
+    this.save(info.index); // TODO: don't save when element gradient is unit
+    this.expr(info.value);
+    if (this.types.type(binaryen.getExpressionType(info.value)) !== unit) {
+      this.markGrad(info.ref);
+      this.markGrad(info.value);
+      this.sets.set(ref, this.fields++); // TODO: only save when element is ref
+    }
+    return { kind: ValueKind.Expression, ref };
+  }
+
+  arrayLen(ref: binaryen.ExpressionRef, info: util.ArrayLenInfo): Value {
+    this.expr(info.ref);
+    return { kind: ValueKind.Expression, ref };
+  }
+
   expression(
     ref: binaryen.ExpressionRef,
     info: binaryen.ExpressionInfo,
@@ -163,13 +230,23 @@ class Taper implements Block {
         return this.const(ref, info as binaryen.ConstInfo);
       case binaryen.BinaryId:
         return this.binary(ref, info as binaryen.BinaryInfo);
+      case binaryen.StructNewId:
+        return this.structNew(ref, info as util.StructNewInfo);
+      case binaryen.ArrayNewId:
+        return this.arrayNew(ref, info as util.ArrayNewInfo);
+      case binaryen.ArrayGetId:
+        return this.arrayGet(ref, info as util.ArrayGetInfo);
+      case binaryen.ArraySetId:
+        return this.arraySet(ref, info as util.ArraySetInfo);
+      case binaryen.ArrayLenId:
+        return this.arrayLen(ref, info as util.ArrayLenInfo);
       default:
         throw Error(`Unsupported expression ID: ${info.id}`);
     }
   }
 
   expr(ref: binaryen.ExpressionRef): Value {
-    return this.expression(ref, binaryen.getExpressionInfo(ref));
+    return this.expression(ref, util.getExpressionInfo(ref));
   }
 }
 
@@ -179,25 +256,41 @@ export interface Tape extends Block {
 }
 
 /** Return a tape type for every function. */
-export const makeTapes = (mod: binaryen.Module): Tape[] => {
+export const makeTapes = (types: Types, mod: binaryen.Module): Tape[] => {
   const indices = util.funcIndicesByName(mod);
   const n = mod.getNumFunctions();
   const blocks: Block[] = [];
-  const types = util.buildTypes(n, (builder) => {
+  const structs = util.buildTypes(n, (builder) => {
     builder.createRecGroup(0, n);
     const temps: binaryen.Type[] = [];
     for (let i = 0; i < n; ++i)
       temps.push(builder.getTempRefType(builder.getTempHeapType(i), false));
     for (let i = 0; i < n; ++i) {
       const f = binaryen.getFunctionInfo(mod.getFunctionByIndex(i));
-      const t = new Taper(f);
+      const t = new Taper(types, f);
       t.expr(f.body);
-      const { fields, stores, calls, loads } = t;
-      blocks.push({ fields, stores, calls, loads });
+      const { fields, stores, grads, sets, calls, loads, gradLoads } = t;
+      blocks.push({ fields, sets, stores, grads, calls, loads, gradLoads });
       const struct: util.Field[] = [];
       for (const [ref, i] of stores)
         struct[i] = {
           type: binaryen.getExpressionType(ref),
+          packedType: util.packedTypeNotPacked,
+          mutable: false,
+        };
+      for (const [ref, i] of grads)
+        struct[i] = {
+          type: types.type(binaryen.getExpressionType(ref)),
+          packedType: util.packedTypeNotPacked,
+          mutable: false,
+        };
+      for (const [ref, i] of sets)
+        struct[i] = {
+          type: types.type(
+            binaryen.getExpressionType(
+              (util.getExpressionInfo(ref) as util.ArraySetInfo).value,
+            ),
+          ),
           packedType: util.packedTypeNotPacked,
           mutable: false,
         };
@@ -206,7 +299,7 @@ export const makeTapes = (mod: binaryen.Module): Tape[] => {
           type: temps[
             util.unwrap(
               indices.get(
-                (binaryen.getExpressionInfo(ref) as binaryen.CallInfo).target,
+                (util.getExpressionInfo(ref) as binaryen.CallInfo).target,
               ),
             )
           ],
@@ -216,5 +309,5 @@ export const makeTapes = (mod: binaryen.Module): Tape[] => {
       builder.setStructType(i, struct);
     }
   });
-  return types.map((struct, i) => ({ ...blocks[i], struct }));
+  return structs.map((struct, i) => ({ ...blocks[i], struct }));
 };

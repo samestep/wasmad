@@ -4,7 +4,7 @@ import * as util from "./util.js";
 /** empty tuple */
 export const unit = binaryen.createType([]);
 
-const becomesMutable = (type: binaryen.Type): boolean => {
+export const becomesMutable = (type: binaryen.Type): boolean => {
   switch (type) {
     case binaryen.f32:
     case binaryen.f64:

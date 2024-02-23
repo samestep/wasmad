@@ -195,51 +195,96 @@ test("arrays", async () => {
   type I32ss = any;
   type F64ss = any;
 
+  type Unit = any;
+  type Units = any;
+
+  type Tape = any;
+
   const {
-    i32sNew,
-    f64sNew,
-    i32ssNew,
-    f64ssNew,
+    orig: {
+      unitNew,
+      unitsNew,
+      unitsSet,
 
-    i32sLen,
-    f64sLen,
-    i32ssLen,
-    f64ssLen,
+      i32sNew,
+      f64sNew,
+      i32ssNew,
+      f64ssNew,
 
-    i32sGet,
-    f64sGet,
-    i32ssGet,
-    f64ssGet,
+      i32sLen,
+      f64sLen,
+      i32ssLen,
+      f64ssLen,
 
-    i32sSet,
-    f64sSet,
-    i32ssSet,
-    f64ssSet,
+      i32sGet,
+      f64sGet,
+      i32ssGet,
+      f64ssGet,
 
-    f,
-  } = await compile<{
-    i32sNew: (n: I32) => I32s;
-    f64sNew: (n: I32) => F64s;
-    i32ssNew: (n: I32) => I32ss;
-    f64ssNew: (n: I32) => F64ss;
+      i32sSet,
+      f64sSet,
+      i32ssSet,
+      f64ssSet,
+    },
+    fwd,
+    bwd,
+  } = await autodiff<{
+    orig: {
+      unitNew: () => Unit;
+      unitsNew: (n: I32) => Units;
+      unitsSet: (a: Units, i: I32, x: null | Unit) => void;
 
-    i32sLen: (a: null | I32s) => I32;
-    f64sLen: (a: null | F64s) => I32;
-    i32ssLen: (a: I32ss) => I32;
-    f64ssLen: (a: F64ss) => I32;
+      i32sNew: (n: I32) => I32s;
+      f64sNew: (n: I32) => F64s;
+      i32ssNew: (n: I32) => I32ss;
+      f64ssNew: (n: I32) => F64ss;
 
-    i32sGet: (a: null | I32s, i: I32) => I32;
-    f64sGet: (a: null | F64s, i: I32) => F64;
-    i32ssGet: (a: I32ss, i: I32) => null | I32s;
-    f64ssGet: (a: F64ss, i: I32) => null | F64s;
+      i32sLen: (a: null | I32s) => I32;
+      f64sLen: (a: null | F64s) => I32;
+      i32ssLen: (a: I32ss) => I32;
+      f64ssLen: (a: F64ss) => I32;
 
-    i32sSet: (a: null | I32s, i: I32, x: I32) => void;
-    f64sSet: (a: null | F64s, i: I32, x: F64) => void;
-    i32ssSet: (a: I32s, i: I32, x: null | I32s) => void;
-    f64ssSet: (a: F64s, i: I32, x: null | F64s) => void;
+      i32sGet: (a: null | I32s, i: I32) => I32;
+      f64sGet: (a: null | F64s, i: I32) => F64;
+      i32ssGet: (a: I32ss, i: I32) => null | I32s;
+      f64ssGet: (a: F64ss, i: I32) => null | F64s;
 
-    f: (i: I32, j: I32, iss: I32ss, jss: I32ss, xss: F64ss, yss: F64ss) => F64;
-  }>(await wat(await slurp("array.wat")));
+      i32sSet: (a: null | I32s, i: I32, x: I32) => void;
+      f64sSet: (a: null | F64s, i: I32, x: F64) => void;
+      i32ssSet: (a: I32s, i: I32, x: null | I32s) => void;
+      f64ssSet: (a: F64s, i: I32, x: null | F64s) => void;
+    };
+    fwd: {
+      f: (
+        i: I32,
+        j: I32,
+        iss: I32ss,
+        jss: I32ss,
+        xss: F64ss,
+        yss: F64ss,
+        diss: Units,
+        djss: Units,
+        dxss: F64ss,
+        dyss: F64ss,
+      ) => [F64, F64, Tape];
+    };
+    bwd: {
+      f: (
+        diss: Units,
+        djss: Units,
+        dxss: F64ss,
+        dyss: F64ss,
+        dz: F64,
+        t: Tape,
+      ) => [Units, Units, F64ss, F64ss];
+    };
+  }>("array.wat");
+
+  const unitsWrite = (n: I32): Units => {
+    const a = unitsNew(n);
+    for (let i = 0; i < n; ++i) unitsSet(a, i, unitNew());
+    return a;
+  };
 
   const i32sWrite = (a: I32[]): I32s => {
     const b = i32sNew(a.length);
@@ -312,7 +357,27 @@ test("arrays", async () => {
     [127, 73, 97, 53],
   ]);
 
-  expect(f(3, 0, iss, jss, xss, yss)).toBe(23 / 2);
+  let diss = unitsWrite(4);
+  let djss = unitsWrite(4);
+  let dxss = f64ssWrite([
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ]);
+  let dyss = f64ssWrite([
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ]);
+
+  const i = 3;
+  const j = 0;
+  let [z, dz, t] = fwd.f(i, j, iss, jss, xss, yss, diss, djss, dxss, dyss);
+  expect([z, dz]).toEqual([23 / 2, 0]);
+  dz = 1;
+  [diss, djss, dxss, dyss] = bwd.f(diss, djss, dxss, dyss, dz, t);
 
   expect(i32ssRead(iss)).toEqual([
     [1, 0, 1, 1],
@@ -337,6 +402,19 @@ test("arrays", async () => {
     [41, 23, 23, 59],
     [17, 2, 2, 101],
     [127, 73, 97, 53],
+  ]);
+
+  expect(f64ssRead(dxss)).toEqual([
+    [0, 0, 0, 0],
+    [0, 0, -23 / 4, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+  ]);
+  expect(f64ssRead(dyss)).toEqual([
+    [0, 0, 0, 0],
+    [0, 0, 1 / 2, 0],
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
   ]);
 });
 
